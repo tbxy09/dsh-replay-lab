@@ -4,8 +4,26 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { hashDirectory } from '../src/hash.ts'
 import {
-  candidatePathGuard, copyWorkspaceSnapshot, replayDisplayNames, requestSurfaceEvidence,
+  candidatePathGuard, copyWorkspaceSnapshot, DeterministicReplayAdapter, replayDisplayNames,
+  requestSurfaceEvidence,
 } from '../src/runner.ts'
+
+describe('deterministic replay adapter', () => {
+  it('advertises complete replayable model metadata without provider credentials', async () => {
+    const adapter = new DeterministicReplayAdapter()
+    expect(adapter.providerInfo('replay-lab-fake')).toEqual({
+      id: 'replay-lab-fake', name: 'Replay Lab deterministic',
+    })
+    await expect(adapter.listModels('replay-lab-fake')).resolves.toEqual([expect.objectContaining({
+      provider: 'replay-lab-fake', id: 'fixture-model-v1', name: 'Replay Lab fixture model',
+    })])
+    await expect(adapter.resolveModel('replay-lab-fake', 'fixture-model-v1')).resolves.toMatchObject({
+      defaultMaxTokens: 2048,
+      context: { contextWindow: 8192 },
+      reasoning: { defaultEffort: 'off', efforts: [{ id: 'off', name: 'Off' }] },
+    })
+  })
+})
 
 describe('candidate workspace isolation', () => {
   it('copies the durable source cwd with matching provenance and never writes through', async () => {
