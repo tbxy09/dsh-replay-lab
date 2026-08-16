@@ -95,10 +95,11 @@ These phrases are trajectory descriptors, not ability measurements.
 ## Install
 
 Requires DeepSeek Harness `0.1.0-rc.6`, Node.js 22.19+ or 24+, and pnpm.
-`v0.1.0` is an immutable GitHub source release; it is not published to npm.
+`v0.1.0` remains immutable. The current GitHub source release is `v0.1.1`;
+neither release is published to npm.
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.0
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.1
 ```
 
 Restart the Web profile after installation:
@@ -152,12 +153,12 @@ for deterministic offline verification; normal runs use the profile's provider.
 
 ## Candidate boundaries
 
-Supported in `v0.1.0`:
+Supported in `v0.1.1`:
 
 - Standard, Minimal, and Anchored Standard presets
 - agent-scoped preset/request-hook plugins
 
-Rejected in `v0.1.0`:
+Rejected in `v0.1.1`:
 
 - provider or session-store replacement
 - sandbox-provider or host-singleton replacement
