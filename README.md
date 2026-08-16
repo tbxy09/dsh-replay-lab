@@ -14,11 +14,6 @@ them.
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
-> [!IMPORTANT]
-> Replay Lab measures bounded experiments. It does not claim that any preset or
-> plugin makes DeepSeek universally smarter, or that it exposes an undocumented
-> DeepSeek model router.
-
 ## Why Replay Lab exists
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) made the
@@ -112,6 +107,25 @@ dsh web
 
 The bundle mounts `@tbxy09/dsh-replay-lab` at `/replay-lab-dsh` and injects
 its client module into the Web profile.
+
+### Enable Anchored Standard
+
+[Anchored Standard](https://github.com/xiaobright/dsh-anchored-standard) is a
+DSH preset, not a plugin package. Copy it under the same `DSH_HOME` used by
+Replay Lab; do not install it with `dsh plugin add`.
+
+```sh
+git clone --depth 1 https://github.com/xiaobright/dsh-anchored-standard.git
+dsh_home="${DSH_HOME:-$HOME/.dsh}"
+mkdir -p "$dsh_home/.agent-presets"
+test ! -e "$dsh_home/.agent-presets/anchored-standard"
+cp -R dsh-anchored-standard/preset "$dsh_home/.agent-presets/anchored-standard"
+```
+
+Fully restart DSH, create a new blank session, and select
+`Anchored Standard (experimental)`. Do not switch an existing active session
+from another preset. Replay Lab marks the Anchored candidate unavailable when
+`anchored-standard` cannot be resolved.
 
 ## Configuration
 
