@@ -123,8 +123,8 @@ The installed bundle includes this baseline:
       name: '@tbxy09/dsh-replay-lab'
       config:
         routeBase: /replay-lab-dsh
-        historyFixture: ./fixtures/history-turns.json
-        workspaceFixture: ./fixtures/workspace
+        historyFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/history-turns.json
+        workspaceFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/workspace
         stateFile: ./.tmp/state.json
         artifactDirectory: ./.tmp/artifacts
         provider: replay-lab-fake
