@@ -10,6 +10,9 @@ All notable changes are documented here. This project follows Semantic Versionin
   copies the current source state into the normal isolated workspace, records
   frozen/current hashes in run and scorecard provenance, and marks the saved
   comparison as drifted in the Replay UI.
+- Scorecards and evidence summaries now use readable metric names, grouped
+  numbers, human-duration units, friendly request phases, and compact IDs while
+  retaining exact raw values in hover text.
 
 ## 0.1.0 - 2026-08-15
 

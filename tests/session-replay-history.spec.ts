@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import {
-  replayHistoryForTurn, WorkspaceDriftNotice, workspaceDriftNotice,
+  compactIdentifier, formatCount, formatDuration, formatMetricDelta, formatMetricValue,
+  formatRequestPhase, formatSurface, replayHistoryForTurn, WorkspaceDriftNotice, workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
 import type { ReplayHistoryEntry } from '../src/types.ts'
 
@@ -23,6 +24,19 @@ function entry(sessionId: string, turn: number, id: string, updatedAt: string): 
 }
 
 describe('per-turn replay history', () => {
+  it('formats dense replay evidence for people while preserving exact values elsewhere', () => {
+    expect(formatCount(326696)).toBe('326,696')
+    expect(formatDuration(458288)).toBe('7 min 38 s')
+    expect(formatDuration(850)).toBe('850 ms')
+    expect(formatMetricValue('durationMs', 101602)).toBe('1 min 42 s')
+    expect(formatMetricDelta('freshInputTokens', 88813)).toBe('+88,813')
+    expect(formatMetricDelta('durationMs', -1500)).toBe('−1.5 s')
+    expect(formatRequestPhase('dynamic-unlocks')).toBe('Dynamic unlocks')
+    expect(formatSurface('preset:anchored-standard')).toBe('Anchored standard preset')
+    expect(formatSurface('host-plane:provider+sandbox')).toBe('Provider + sandbox (host-level)')
+    expect(compactIdentifier('replay-exp-c04721c-very-long-identifier-b2d')).toBe('replay-exp-c04721…fier-b2d')
+  })
+
   it('filters by source session and turn and orders newest first', () => {
     const history = [
       entry('fish', 1, 'older', '2026-08-15T00:00:00.000Z'),

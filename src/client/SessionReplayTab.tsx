@@ -11,28 +11,80 @@ const statusLabel = {
   aborted: 'Aborted', failed: 'Failed',
 } as const
 
+const integerFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
+const decimalFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
+const metricLabels = {
+  freshInputTokens: 'Fresh input tokens', outputTokens: 'Output tokens',
+  cacheReadTokens: 'Cache read tokens', durationMs: 'Duration',
+  stepCount: 'Steps', toolCalls: 'Tool calls',
+} as const
+
+export function formatCount(value: number): string {
+  return integerFormatter.format(value)
+}
+
+export function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1_000) return `${formatCount(milliseconds)} ms`
+  if (milliseconds < 60_000) return `${decimalFormatter.format(milliseconds / 1_000)} s`
+  const minutes = Math.floor(milliseconds / 60_000)
+  const seconds = Math.round((milliseconds % 60_000) / 1_000)
+  if (seconds === 60) return `${formatCount(minutes + 1)} min`
+  return seconds === 0 ? `${formatCount(minutes)} min` : `${formatCount(minutes)} min ${seconds} s`
+}
+
+export function formatMetricValue(key: keyof typeof metricLabels, value: number): string {
+  return key === 'durationMs' ? formatDuration(value) : formatCount(value)
+}
+
+export function formatMetricDelta(key: keyof typeof metricLabels, value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
+  return `${sign}${formatMetricValue(key, Math.abs(value))}`
+}
+
+export function formatRequestPhase(phase: string): string {
+  const labels: Record<string, string> = {
+    observed: 'Observed baseline', request: 'Request', bootstrap: 'Bootstrap',
+    promoted: 'Promoted', 'dynamic-unlocks': 'Dynamic unlocks',
+  }
+  return labels[phase] ?? phase.replaceAll('-', ' ').replace(/^./, character => character.toUpperCase())
+}
+
+export function formatSurface(surface: string): string {
+  const [scope, value] = surface.split(':', 2)
+  const label = (value ?? scope ?? '').replaceAll('-', ' ').replace(/^./, character => character.toUpperCase())
+  if (value === undefined) return label
+  if (scope === 'preset') return `${label} preset`
+  if (scope === 'agent-plugin') return `${label} plugin`
+  if (scope === 'host-plane') return `${label.replaceAll('+', ' + ')} (host-level)`
+  return label
+}
+
+export function compactIdentifier(value: string): string {
+  return value.length <= 28 ? value : `${value.slice(0, 17)}…${value.slice(-8)}`
+}
+
 function EvidenceSummary({ title, evidence }: { title: string; evidence?: RunEvidence }): ReactNode {
   return (
     <section className="rld-session-evidence">
-      <header><h4>{title}</h4><strong data-status={evidence?.status}>{evidence?.status ?? 'Not run'}</strong></header>
+      <header><h4>{title}</h4><strong data-status={evidence?.status}>{evidence === undefined ? 'Not run' : statusLabel[evidence.status]}</strong></header>
       {evidence === undefined
         ? <p className="rld-session-muted">No independent evidence yet.</p>
         : <>
           <dl>
-            <div><dt>Session</dt><dd title={evidence.sessionId}>{evidence.sessionId}</dd></div>
-            <div><dt>Request phase</dt><dd>{evidence.requestPhases.join(' → ') || '—'}</dd></div>
+            <div><dt>Session ID</dt><dd title={evidence.sessionId}>{compactIdentifier(evidence.sessionId)}</dd></div>
+            <div><dt>Request phase</dt><dd>{evidence.requestPhases.map(formatRequestPhase).join(' → ') || '—'}</dd></div>
             {evidence.requestSurfaces?.map((surface, index) => <div key={`${surface.phase}-${index}`}>
-              <dt>{surface.phase} tools</dt>
+              <dt>{formatRequestPhase(surface.phase)} tools</dt>
               <dd title={surface.toolNames.join(', ')}>{surface.toolNames.join(', ') || 'No tools'}</dd>
             </div>)}
-            <div><dt>Events</dt><dd>{evidence.eventCount}</dd></div>
+            <div><dt>Events</dt><dd title={String(evidence.eventCount)}>{formatCount(evidence.eventCount)}</dd></div>
           </dl>
           {evidence.metrics === undefined
             ? <p className="rld-session-warning" role="status">Evidence unavailable: {evidence.missingReason ?? 'incomplete event stream'}</p>
             : <div className="rld-session-metrics">
-              <span><small>Fresh input</small><strong>{evidence.metrics.freshInputTokens}</strong></span>
-              <span><small>Output</small><strong>{evidence.metrics.outputTokens}</strong></span>
-              <span><small>Cache read</small><strong>{evidence.metrics.cacheReadTokens}</strong></span>
+              <span><small>Fresh input tokens</small><strong title={String(evidence.metrics.freshInputTokens)}>{formatCount(evidence.metrics.freshInputTokens)}</strong></span>
+              <span><small>Output tokens</small><strong title={String(evidence.metrics.outputTokens)}>{formatCount(evidence.metrics.outputTokens)}</strong></span>
+              <span><small>Cache read tokens</small><strong title={String(evidence.metrics.cacheReadTokens)}>{formatCount(evidence.metrics.cacheReadTokens)}</strong></span>
             </div>}
         </>}
     </section>
@@ -72,8 +124,10 @@ function ScorecardTable({ scorecard, missingReason, workspaceDrift }: {
         : <table>
           <thead><tr><th>Metric</th><th>Baseline</th><th>Candidate</th><th>Delta</th></tr></thead>
           <tbody>{scorecard.rows.map(row => <tr key={row.key}>
-            <th>{row.label}</th><td>{row.baseline}</td><td>{row.candidate}</td>
-            <td>{row.delta > 0 ? '+' : ''}{row.delta}</td>
+            <th title={row.label}>{metricLabels[row.key]}</th>
+            <td title={String(row.baseline)}>{formatMetricValue(row.key, row.baseline)}</td>
+            <td title={String(row.candidate)}>{formatMetricValue(row.key, row.candidate)}</td>
+            <td title={String(row.delta)}>{formatMetricDelta(row.key, row.delta)}</td>
           </tr>)}</tbody>
         </table>}
     </section>
@@ -95,8 +149,8 @@ function VariantRow({ variant, selected, onSelect }: {
       onClick={onSelect}
     >
       <span><strong>{variant.label}</strong></span>
-      <code>{variant.pluginSurface}</code>
-      <span>{variant.requestPhases.join(' → ') || '—'}</span>
+      <code title={variant.pluginSurface}>{formatSurface(variant.pluginSurface)}</code>
+      <span>{variant.requestPhases.map(formatRequestPhase).join(' → ') || '—'}</span>
       <em data-supported={variant.supported}>{variant.supported ? 'Supported' : 'Unavailable'}</em>
     </button>
   )
@@ -153,8 +207,8 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
             <dl>
               <div><dt>Model</dt><dd>{replayCase.model}</dd></div>
               <div><dt>Reasoning</dt><dd>{replayCase.reasoning}</dd></div>
-              <div><dt>Max tokens</dt><dd>{replayCase.maxTokens}</dd></div>
-              <div><dt>Preset</dt><dd>{replayCase.presetSurface}</dd></div>
+              <div><dt>Max tokens</dt><dd title={replayCase.maxTokens === undefined ? undefined : String(replayCase.maxTokens)}>{replayCase.maxTokens === undefined ? 'Default' : formatCount(replayCase.maxTokens)}</dd></div>
+              <div><dt>Preset</dt><dd title={replayCase.presetSurface}>{formatSurface(replayCase.presetSurface)}</dd></div>
               <div><dt>Source workspace</dt><dd title={replayCase.sourceCwd}>{replayCase.sourceCwd}</dd></div>
             </dl>
           </section>
@@ -246,8 +300,8 @@ function TurnPicker({ turns, history, projectionAvailable, sessionId, submitting
               <div className="rld-turn-meta">
                 <span><small>Model</small><strong>{item.model ?? 'Unavailable'}</strong></span>
                 <span><small>Reasoning</small><strong>{item.reasoning}</strong></span>
-                <span><small>Max tokens</small><strong>{item.maxTokens ?? 'Unavailable'}</strong></span>
-                <span><small>Steps</small><strong>{item.stepCount}</strong></span>
+                <span><small>Max tokens</small><strong title={item.maxTokens == null ? undefined : String(item.maxTokens)}>{item.maxTokens == null ? 'Unavailable' : formatCount(item.maxTokens)}</strong></span>
+                <span><small>Steps</small><strong title={String(item.stepCount)}>{formatCount(item.stepCount)}</strong></span>
               </div>
               {item.prompt === null
                 ? <p className="rld-turn-prompt rld-session-muted">The user prompt is outside the loaded history window.</p>
