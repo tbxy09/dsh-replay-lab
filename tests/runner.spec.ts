@@ -20,6 +20,7 @@ describe('candidate workspace isolation', () => {
 
       expect(isolated.provenance).toMatchObject({
         sourceCwd: resolve(sourceCwd), sourceHash, executionHash: sourceHash, isolation: 'copy',
+        drift: { detected: false, frozenHash: sourceHash, currentHash: sourceHash },
       })
       expect(isolated.durable).toBe(false)
       expect(isolated.provenance.executionCwd).not.toBe(resolve(sourceCwd))
@@ -34,12 +35,27 @@ describe('candidate workspace isolation', () => {
     }
   })
 
-  it('fails before copying when the source no longer matches its frozen hash', async () => {
+  it('copies the current source state and records provenance when it differs from the frozen hash', async () => {
     const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-runner-stale-'))
+    let isolatedRoot: string | undefined
     try {
-      await writeFile(join(sourceCwd, 'task.txt'), 'changed', 'utf8')
-      await expect(copyWorkspaceSnapshot(sourceCwd, '0'.repeat(64))).rejects.toThrow(/changed after/)
+      await writeFile(join(sourceCwd, 'task.txt'), 'frozen', 'utf8')
+      const frozenHash = await hashDirectory(sourceCwd)
+      await writeFile(join(sourceCwd, 'task.txt'), 'current', 'utf8')
+      await writeFile(join(sourceCwd, 'added.txt'), 'added after freeze', 'utf8')
+
+      const isolated = await copyWorkspaceSnapshot(sourceCwd, frozenHash)
+      isolatedRoot = isolated.root
+      const currentHash = await hashDirectory(sourceCwd)
+      expect(isolated.provenance).toMatchObject({
+        sourceHash: currentHash,
+        executionHash: currentHash,
+        drift: { detected: true, frozenHash, currentHash },
+      })
+      expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('current')
+      expect(await readFile(join(isolated.provenance.executionCwd, 'added.txt'), 'utf8')).toBe('added after freeze')
     } finally {
+      if (isolatedRoot !== undefined) await rm(isolatedRoot, { recursive: true, force: true })
       await rm(sourceCwd, { recursive: true, force: true })
     }
   })

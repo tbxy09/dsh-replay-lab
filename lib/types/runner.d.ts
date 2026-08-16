@@ -23,7 +23,7 @@ export declare function replayDisplayNames(replayCase: Pick<FrozenReplayCase, 's
     sessionTitle: string;
     executionName: string;
 };
-/** Copy the frozen source workspace and verify byte provenance. */
+/** Copy the current source workspace and retain its comparison with the frozen case hash. */
 export declare function copyWorkspaceSnapshot(sourceCwd: string, expectedHash: string, options?: WorkspaceSnapshotOptions): Promise<IsolatedWorkspace>;
 export declare class DeterministicReplayAdapter extends LlmAdapter {
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;

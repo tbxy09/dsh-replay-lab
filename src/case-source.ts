@@ -91,6 +91,7 @@ export async function freezeReplayTurn(
       sourceCwd: resolve(sourceCwd), sourceHash: sourceWorkspaceHash,
       executionCwd: resolve(sourceCwd), executionHash: sourceWorkspaceHash,
       isolation: 'observed-source', policy: 'durable current-session turn; no replay executed',
+      drift: { detected: false, frozenHash: sourceWorkspaceHash, currentHash: sourceWorkspaceHash },
     },
   }
   return Object.freeze({

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -7,6 +7,8 @@ import type { ArtifactStore, CaseSource, Runner } from '../src/registries.ts'
 import type { FrozenReplayCase, HistoryTurnSource, LabSnapshot, ReplayableTurnRecord, RunEvidence } from '../src/types.ts'
 import { IndependentEvidenceOracle } from '../src/metrics.ts'
 import { builtInVariants } from '../src/variants.ts'
+import { hashDirectory } from '../src/hash.ts'
+import { copyWorkspaceSnapshot } from '../src/runner.ts'
 
 const baselineMetrics = { freshInputTokens: 11, outputTokens: 7, cacheReadTokens: 3, durationMs: 90, stepCount: 2, toolCalls: 1 }
 const sourceRow: HistoryTurnSource = {
@@ -38,10 +40,15 @@ function caseSource(): CaseSource {
   return { id: 'source', list: async () => [sourceRow], freeze: async () => replayCase }
 }
 
-function makeService(caseSourceImpl: CaseSource, runner: Runner, resolveTurn?: ReplayTurnResolver): ReplayLabService {
+function makeService(
+  caseSourceImpl: CaseSource,
+  runner: Runner,
+  resolveTurn?: ReplayTurnResolver,
+  store: MemoryStore = new MemoryStore(),
+): ReplayLabService {
   const service = new ReplayLabService('/replay-lab-dsh', resolveTurn)
   service.registries.caseSources.register(caseSourceImpl)
-  service.registries.artifactStores.register(new MemoryStore())
+  service.registries.artifactStores.register(store)
   service.registries.runners.register(runner)
   service.registries.oracles.register(new IndependentEvidenceOracle())
   for (const variant of builtInVariants()) service.registries.variants.register(variant)
@@ -99,6 +106,56 @@ describe('ReplayLabService', () => {
     expect(afterBack.history).toEqual([expect.objectContaining({
       sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment,
     })])
+  })
+
+  it('completes and persists a drifted candidate against the current isolated workspace', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-drift-service-'))
+    let isolatedRoot: string | undefined
+    try {
+      await writeFile(join(sourceCwd, 'task.txt'), 'frozen source', 'utf8')
+      const frozenHash = await hashDirectory(sourceCwd)
+      const frozenCase: FrozenReplayCase = {
+        ...replayCase,
+        sourceCwd,
+        sourceWorkspaceHash: frozenHash,
+      }
+      const store = new MemoryStore()
+      const runner: Runner = {
+        id: 'runner',
+        async run({ replayCase: candidateCase, variant }): Promise<RunEvidence> {
+          const isolated = await copyWorkspaceSnapshot(candidateCase.sourceCwd, candidateCase.sourceWorkspaceHash)
+          isolatedRoot = isolated.root
+          expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('current source')
+          return {
+            runId: 'drifted-run', sessionId: 'drifted-candidate-session', variantId: variant.id,
+            status: 'completed', requestPhases: ['request'], metrics: baselineMetrics,
+            complete: true, eventCount: 8, evidenceHash: 'drifted-candidate-hash', workspace: isolated.provenance,
+          }
+        },
+      }
+      const service = makeService({
+        id: 'source', list: async () => [sourceRow], freeze: async () => frozenCase,
+      }, runner, undefined, store)
+
+      await service.freeze('source')
+      await writeFile(join(sourceCwd, 'task.txt'), 'current source', 'utf8')
+      await service.plan('standard')
+      await service.approveAndRun()
+      await expect.poll(async () => (await service.snapshot()).experiment?.status).toBe('completed')
+
+      const experiment = (await service.snapshot()).experiment
+      expect(experiment?.candidate).toMatchObject({
+        status: 'completed', complete: true,
+        workspace: {
+          drift: { detected: true, frozenHash, currentHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+        },
+      })
+      expect(experiment?.scorecard?.workspaceDrift).toEqual(experiment?.candidate?.workspace?.drift)
+      expect(store.value.history[0]?.experiment.scorecard?.workspaceDrift?.detected).toBe(true)
+    } finally {
+      if (isolatedRoot !== undefined) await rm(isolatedRoot, { recursive: true, force: true })
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
   })
 
   it('resolves source cwd from the host and freezes observed evidence against it', async () => {

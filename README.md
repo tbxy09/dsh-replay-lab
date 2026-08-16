@@ -71,6 +71,8 @@ Completed DSH turn
   surface, system hash, and tool-schema hash.
 - Keeps the observed source turn fixed; only the candidate executes.
 - Runs candidates in validated workspace copies with path-containment guards.
+- If the source workspace changed after freezing, runs from an isolated copy of
+  the current state and records both hashes as workspace-drift provenance.
 - Produces a scorecard only from independently recorded evidence.
 - Rejects unsupported host-plane changes and incomplete variants.
 
@@ -170,12 +172,16 @@ pnpm run pack:check
 ```
 
 The test suite covers freeze/approval/run transitions, durable projection
-history, independent scorecards, workspace containment, and fail-closed
-variants. CI runs the same gate on macOS and Linux with Node 22.19 and 24.
+history, independent scorecards, unchanged and drifted workspace provenance,
+workspace containment, and fail-closed variants. CI runs the same gate on
+macOS and Linux with Node 22.19 and 24.
 
 ## Security and evidence boundary
 
 - Candidate execution requires explicit approval and uses an isolated copy.
+- Workspace drift is non-blocking: the completed run and scorecard identify
+  that the candidate used current source state and is not a strict controlled
+  comparison. Copy integrity and containment checks still fail closed.
 - Structured paths from candidates and subagents are rejected when they escape
   that copy, including through symlinks.
 - The Web client talks only to the plugin Host API; it does not read files or

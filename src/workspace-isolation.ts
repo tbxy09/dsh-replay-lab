@@ -58,15 +58,13 @@ export interface WorkspaceIsolator {
 
 /**
  * Candidate runs receive a disposable copy. The source is hashed again before
- * copying and the copy is hashed afterwards; any drift fails closed.
+ * copying, frozen-case drift is recorded, and the copy must match that current
+ * source snapshot.
  */
 export class CopyWorkspaceIsolator implements WorkspaceIsolator {
   async isolate(sourceCwd: string, expectedSourceHash: string): Promise<IsolatedWorkspace> {
     const source = resolve(sourceCwd)
     const sourceHash = await hashReplayWorkspace(source)
-    if (sourceHash !== expectedSourceHash) {
-      throw new Error('source workspace changed after the replay turn was frozen; freeze it again before running')
-    }
     const parent = await mkdtemp(join(tmpdir(), 'dsh-replay-workspace-'))
     const cwd = join(parent, 'workspace')
     try {
@@ -86,6 +84,11 @@ export class CopyWorkspaceIsolator implements WorkspaceIsolator {
           executionHash,
           isolation: 'copy',
           policy: WORKSPACE_COPY_POLICY,
+          drift: {
+            detected: sourceHash !== expectedSourceHash,
+            frozenHash: expectedSourceHash,
+            currentHash: sourceHash,
+          },
         },
         cleanup: async () => { await rm(parent, { recursive: true, force: true }) },
       }

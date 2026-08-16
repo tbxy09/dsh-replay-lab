@@ -12,7 +12,8 @@ export interface WorkspaceIsolator {
 }
 /**
  * Candidate runs receive a disposable copy. The source is hashed again before
- * copying and the copy is hashed afterwards; any drift fails closed.
+ * copying, frozen-case drift is recorded, and the copy must match that current
+ * source snapshot.
  */
 export declare class CopyWorkspaceIsolator implements WorkspaceIsolator {
     isolate(sourceCwd: string, expectedSourceHash: string): Promise<IsolatedWorkspace>;

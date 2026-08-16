@@ -57,7 +57,12 @@ export class IndependentEvidenceOracle implements Oracle {
       candidate: candidate.metrics![key],
       delta: candidate.metrics![key] - baseline.metrics![key],
     }))
-    return { baselineSessionId: baseline.sessionId, candidateSessionId: candidate.sessionId, rows }
+    return {
+      baselineSessionId: baseline.sessionId,
+      candidateSessionId: candidate.sessionId,
+      rows,
+      ...(candidate.workspace?.drift === undefined ? {} : { workspaceDrift: candidate.workspace.drift }),
+    }
   }
 }
 

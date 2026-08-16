@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { replayHistoryForTurn } from '../src/client/SessionReplayTab.tsx'
+import { isValidElement, type ReactElement, type ReactNode } from 'react'
+import {
+  replayHistoryForTurn, WorkspaceDriftNotice, workspaceDriftNotice,
+} from '../src/client/SessionReplayTab.tsx'
 import type { ReplayHistoryEntry } from '../src/types.ts'
 
 function entry(sessionId: string, turn: number, id: string, updatedAt: string): ReplayHistoryEntry {
@@ -38,5 +41,19 @@ describe('per-turn replay history', () => {
       complete: true, eventCount: 1, evidenceHash: 'hash',
     }
     expect(replayHistoryForTurn([corrupt], 'fish', 1)).toEqual([])
+  })
+
+  it('renders drift as a non-blocking status with frozen and current hashes', () => {
+    const drift = { detected: true, frozenHash: 'a'.repeat(64), currentHash: 'b'.repeat(64) }
+    const notice = WorkspaceDriftNotice({ drift })
+    expect(workspaceDriftNotice(drift)).toMatch(/current workspace state/)
+    expect(isValidElement(notice)).toBe(true)
+    const element = notice as ReactElement<{ role: string; children: ReactNode }>
+    expect(element.props.role).toBe('status')
+    expect(JSON.stringify(element.props.children)).toContain('Workspace drift')
+    expect(JSON.stringify(element.props.children)).toContain('aaaaaaaaaaaa')
+    expect(JSON.stringify(element.props.children)).toContain('bbbbbbbbbbbb')
+    expect(workspaceDriftNotice({ ...drift, detected: false })).toBeUndefined()
+    expect(WorkspaceDriftNotice({ drift: { ...drift, detected: false } })).toBeNull()
   })
 })

@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import {
   replayTurnKey, replayTurnTestId, type ReplayHistoryEntry, type ReplayableTurnRecord,
-  type RunEvidence, type Scorecard, type VariantDescriptor,
+  type RunEvidence, type Scorecard, type VariantDescriptor, type WorkspaceDriftProvenance,
 } from '../types.ts'
 import type { ReplayTabProps } from './slots.ts'
 
@@ -39,10 +39,34 @@ function EvidenceSummary({ title, evidence }: { title: string; evidence?: RunEvi
   )
 }
 
-function ScorecardTable({ scorecard, missingReason }: { scorecard?: Scorecard; missingReason?: string }): ReactNode {
+export function workspaceDriftNotice(drift: WorkspaceDriftProvenance | undefined): string | undefined {
+  return drift?.detected === true
+    ? 'Workspace changed after this replay case was frozen. The candidate used the current workspace state, so this is not a strict controlled comparison.'
+    : undefined
+}
+
+export function WorkspaceDriftNotice({ drift }: { drift?: WorkspaceDriftProvenance }): ReactNode {
+  const notice = workspaceDriftNotice(drift)
+  if (notice === undefined || drift === undefined) return null
+  return <div className="rld-session-drift-notice" role="status">
+    <strong>Workspace drift</strong>
+    <span>{notice}</span>
+    <code title={`Frozen: ${drift.frozenHash}\nCurrent: ${drift.currentHash}`}>
+      {drift.frozenHash.slice(0, 12)} → {drift.currentHash.slice(0, 12)}
+    </code>
+  </div>
+}
+
+function ScorecardTable({ scorecard, missingReason, workspaceDrift }: {
+  scorecard?: Scorecard
+  missingReason?: string
+  workspaceDrift?: WorkspaceDriftProvenance
+}): ReactNode {
+  const drift = scorecard?.workspaceDrift ?? workspaceDrift
   return (
     <section className="rld-session-scorecard">
-      <header><h3>Scorecard</h3><span>Independent evidence only</span></header>
+      <header><h3>Scorecard</h3><span>{drift?.detected === true ? 'Workspace drift recorded' : 'Independent evidence only'}</span></header>
+      <WorkspaceDriftNotice drift={drift} />
       {scorecard === undefined
         ? <p className="rld-session-muted">{missingReason ?? 'Generated after the candidate produces complete evidence.'}</p>
         : <table>
@@ -106,6 +130,7 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
   const [viewingId, setViewingId] = useState<string | undefined>(experiment?.id)
   useEffect(() => { setViewingId(experiment?.id) }, [experiment?.id])
   const displayedExperiment = history.find(entry => entry.experiment.id === viewingId)?.experiment ?? experiment
+  const displayedDrift = displayedExperiment?.scorecard?.workspaceDrift ?? displayedExperiment?.candidate?.workspace?.drift
   if (replayCase === undefined || replayCase.sourceSessionId !== sessionId) return null
 
   return (
@@ -167,6 +192,9 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
               >
                 <strong>{variant?.label ?? entry.experiment.candidateVariantId}</strong>
                 <span>{statusLabel[entry.experiment.status]} · {new Date(entry.experiment.updatedAt).toLocaleString()}</span>
+                {(entry.experiment.scorecard?.workspaceDrift?.detected === true
+                  || entry.experiment.candidate?.workspace?.drift?.detected === true)
+                  && <em>Workspace drift</em>}
               </button>
             })}</div>
           </section>}
@@ -174,7 +202,11 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
             <EvidenceSummary title={`Current session · Turn ${replayCase.sourceTurn}`} evidence={displayedExperiment?.baseline ?? replayCase.observedBaseline} />
             <EvidenceSummary title="Candidate replay" evidence={displayedExperiment?.candidate} />
           </div>
-          <ScorecardTable scorecard={displayedExperiment?.scorecard} missingReason={displayedExperiment?.scorecardMissingReason} />
+          <ScorecardTable
+            scorecard={displayedExperiment?.scorecard}
+            missingReason={displayedExperiment?.scorecardMissingReason}
+            workspaceDrift={displayedDrift}
+          />
         </aside>
       </div>
     </div>

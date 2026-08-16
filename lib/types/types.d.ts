@@ -130,13 +130,22 @@ export interface RunEvidence {
     evidenceHash?: string;
     workspace?: WorkspaceProvenance;
 }
+/** Audit record comparing the frozen case workspace with the source used by a candidate. */
+export interface WorkspaceDriftProvenance {
+    detected: boolean;
+    frozenHash: string;
+    currentHash: string;
+}
 export interface WorkspaceProvenance {
     sourceCwd: string;
+    /** Hash of the source workspace state copied for this candidate. */
     sourceHash: string;
     executionCwd: string;
     executionHash: string;
     isolation: 'observed-source' | 'copy';
     policy: string;
+    /** Omitted only when reading legacy/custom workspace evidence. */
+    drift?: WorkspaceDriftProvenance;
 }
 export interface ScorecardRow {
     key: keyof RunMetrics;
@@ -149,6 +158,8 @@ export interface Scorecard {
     baselineSessionId: string;
     candidateSessionId: string;
     rows: readonly ScorecardRow[];
+    /** Omitted only for legacy/custom evidence that did not record workspace provenance. */
+    workspaceDrift?: WorkspaceDriftProvenance;
 }
 export interface ReplayExperiment {
     id: string;
