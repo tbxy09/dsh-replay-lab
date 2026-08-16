@@ -38,4 +38,36 @@ describe('JsonArtifactStore replay history', () => {
       await rm(directory, { recursive: true, force: true })
     }
   })
+
+  it('round-trips workspace drift provenance in the saved run and scorecard', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'rld-store-drift-'))
+    const file = join(directory, 'state.json')
+    const drift = { detected: true, frozenHash: 'a'.repeat(64), currentHash: 'b'.repeat(64) }
+    const driftExperiment: ReplayExperiment = {
+      ...experiment,
+      candidate: {
+        runId: 'candidate', sessionId: 'candidate-session', variantId: 'standard', status: 'completed',
+        requestPhases: ['request'], complete: true, eventCount: 3,
+        workspace: {
+          sourceCwd: '/workspace', sourceHash: drift.currentHash,
+          executionCwd: '/artifacts/candidate/workspace', executionHash: drift.currentHash,
+          isolation: 'copy', policy: 'test', drift,
+        },
+      },
+      scorecard: {
+        baselineSessionId: 'session', candidateSessionId: 'candidate-session', rows: [], workspaceDrift: drift,
+      },
+    }
+    try {
+      const store = new JsonArtifactStore(file, join(directory, 'artifacts'))
+      await store.save({ history: [{
+        sourceSessionId: 'session', sourceTurn: 1, replayCase, experiment: driftExperiment,
+      }] })
+      const loaded = await store.load()
+      expect(loaded.history[0]?.experiment.candidate?.workspace?.drift).toEqual(drift)
+      expect(loaded.history[0]?.experiment.scorecard?.workspaceDrift).toEqual(drift)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
 })

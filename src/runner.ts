@@ -117,7 +117,7 @@ export function replayDisplayNames(
   }
 }
 
-/** Copy the frozen source workspace and verify byte provenance. */
+/** Copy the current source workspace and retain its comparison with the frozen case hash. */
 export async function copyWorkspaceSnapshot(
   sourceCwd: string,
   expectedHash: string,
@@ -125,7 +125,6 @@ export async function copyWorkspaceSnapshot(
 ): Promise<IsolatedWorkspace> {
   const source = resolve(sourceCwd)
   const sourceHash = await hashDirectory(source)
-  if (sourceHash !== expectedHash) throw new Error('source workspace changed after the replay case was frozen')
   const durable = options.parentDirectory !== undefined
   const parent = durable ? resolve(options.parentDirectory as string) : tmpdir()
   await mkdir(parent, { recursive: true })
@@ -136,12 +135,13 @@ export async function copyWorkspaceSnapshot(
       recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true,
     })
     const executionHash = await hashDirectory(executionCwd)
-    if (executionHash !== expectedHash) throw new Error('isolated workspace copy does not match the frozen source hash')
+    if (executionHash !== sourceHash) throw new Error('isolated workspace copy does not match the current source snapshot')
     return {
       root, durable,
       provenance: {
         sourceCwd: source, sourceHash, executionCwd, executionHash,
         isolation: 'copy',
+        drift: { detected: sourceHash !== expectedHash, frozenHash: expectedHash, currentHash: sourceHash },
         policy: durable
           ? 'recursive symlink-preserving copy in the Replay Lab managed artifact directory'
           : 'recursive symlink-preserving copy in a process-owned temporary directory',

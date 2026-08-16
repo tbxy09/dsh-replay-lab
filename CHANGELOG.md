@@ -2,6 +2,15 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## Unreleased
+
+### Changed
+
+- Workspace hash drift no longer blocks an approved candidate. Replay Lab now
+  copies the current source state into the normal isolated workspace, records
+  frozen/current hashes in run and scorecard provenance, and marks the saved
+  comparison as drifted in the Replay UI.
+
 ## 0.1.0 - 2026-08-15
 
 ### Added
