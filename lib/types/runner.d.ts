@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { LlmAdapter } from '@deepseek-ai/dsh-llm';
+import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { MetricsExtractor, Runner, VariantContributor } from './registries.ts';
 import type { FrozenReplayCase, RequestSurfaceEvidence, RunEvidence, VariantDescriptor, WorkspaceProvenance } from './types.ts';
@@ -26,6 +26,34 @@ export declare function replayDisplayNames(replayCase: Pick<FrozenReplayCase, 's
 /** Copy the current source workspace and retain its comparison with the frozen case hash. */
 export declare function copyWorkspaceSnapshot(sourceCwd: string, expectedHash: string, options?: WorkspaceSnapshotOptions): Promise<IsolatedWorkspace>;
 export declare class DeterministicReplayAdapter extends LlmAdapter {
+    providerInfo(provider: string): {
+        id: string;
+        name: string;
+    };
+    listModels(provider: string): Promise<{
+        provider: string;
+        id: string;
+        name: string;
+        inputModalities: "text"[];
+    }[]>;
+    resolveModel(provider: string, model: string): Promise<{
+        provider: string;
+        id: string;
+        name: string;
+        inputModalities: "text"[];
+        context: {
+            contextWindow: number;
+        };
+        defaultMaxTokens: number;
+        reasoning: {
+            efforts: {
+                id: ReasoningEffortId;
+                name: string;
+                description: string;
+            }[];
+            defaultEffort: ReasoningEffortId;
+        };
+    }>;
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
 }
 export declare class CordisAgentRunner implements Runner {

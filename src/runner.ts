@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
-import { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
@@ -154,6 +154,30 @@ export async function copyWorkspaceSnapshot(
 }
 
 export class DeterministicReplayAdapter extends LlmAdapter {
+  override providerInfo(provider: string) {
+    return { id: provider, name: 'Replay Lab deterministic' }
+  }
+
+  override async listModels(provider: string) {
+    return [{ provider, id: 'fixture-model-v1', name: 'Replay Lab fixture model', inputModalities: ['text' as const] }]
+  }
+
+  override async resolveModel(provider: string, model: string) {
+    const off = ReasoningEffortId('off')
+    return {
+      provider,
+      id: model,
+      name: model === 'fixture-model-v1' ? 'Replay Lab fixture model' : model,
+      inputModalities: ['text' as const],
+      context: { contextWindow: 8_192 },
+      defaultMaxTokens: 2_048,
+      reasoning: {
+        efforts: [{ id: off, name: 'Off', description: 'Deterministic fixture reasoning disabled' }],
+        defaultEffort: off,
+      },
+    }
+  }
+
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const text = 'fixture-ok'
     const chunks: StreamChunk[] = [
