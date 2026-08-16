@@ -1,0 +1,34 @@
+[
+  {
+    "id": "history-main-view-turn-1",
+    "kind": "history",
+    "sessionId": "fixture-history-main-view",
+    "turn": 1,
+    "title": "Main View 结构核验",
+    "createdAt": "2026-08-15T08:00:00.000Z",
+    "prompt": "核验 DSH Main View 的 sidebar、overlay 与 session seam，并给出只读结论。",
+    "provider": "replay-lab-fake",
+    "model": "fixture-model-v1",
+    "reasoning": "high",
+    "maxTokens": 2048,
+    "presetSurface": "standard@fixture",
+    "systemHash": "2be1b6cb0b8dd36e8088ab812c8fc4c34f6497d2e17b0c1db4426347eabda67f",
+    "toolSchemaHash": "fd2fd4541f5c133f2b5d98d33d6d7db743c65d7b3409496667061912018d96a8"
+  },
+  {
+    "id": "bookmark-scorecard-turn-2",
+    "kind": "bookmark",
+    "sessionId": "fixture-bookmark-scorecard",
+    "turn": 2,
+    "title": "Scorecard evidence 边界",
+    "createdAt": "2026-08-15T08:05:00.000Z",
+    "prompt": "比较两个独立 session 的 evidence；缺少 candidate evidence 时禁止生成零差值。",
+    "provider": "replay-lab-fake",
+    "model": "fixture-model-v1",
+    "reasoning": "high",
+    "maxTokens": 2048,
+    "presetSurface": "standard@fixture",
+    "systemHash": "5c8912f0b7ac1af8e3c6767f54127d933ee0bf8aa763e19e54c6a83848d4518f",
+    "toolSchemaHash": "28a667a1e4ed01d83297fdd8e2f99fba2b7c81615d58f6cd9bfc47104436f3b7"
+  }
+]

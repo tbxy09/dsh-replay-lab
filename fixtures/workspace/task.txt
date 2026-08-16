@@ -1,0 +1,1 @@
+运行一个只读的 legacy workspace fixture，它的内容将被哈希进冻结 replay case 的 sourceWorkspaceHash。

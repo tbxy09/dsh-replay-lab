@@ -1,0 +1,156 @@
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-title'
+import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-workspace'
+import { FixtureCaseSource } from './case-source.ts'
+import { JsonArtifactStore } from './artifact-store.ts'
+import { createHttpHandler } from './http.ts'
+import { IndependentEvidenceOracle, SessionMetricsExtractor } from './metrics.ts'
+import { candidatePathGuard, DeterministicReplayAdapter, CordisAgentRunner } from './runner.ts'
+import { ReplayLabService } from './service.ts'
+import { builtInVariants } from './variants.ts'
+import { replayTurnsProjectionDefinition } from './replay-turn-projection.ts'
+import type { ReplayExperiment, ReplayTurnIdentifier, TransitionStage } from './types.ts'
+
+export * from './types.ts'
+export * from './registries.ts'
+export { ReplayLabService } from './service.ts'
+export { FixtureCaseSource } from './case-source.ts'
+export { JsonArtifactStore } from './artifact-store.ts'
+export { SessionMetricsExtractor, IndependentEvidenceOracle } from './metrics.ts'
+export { CordisAgentRunner, DeterministicReplayAdapter } from './runner.ts'
+export { builtInVariants } from './variants.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { replayLabDsh: ReplayLabService }
+}
+
+export const name = 'replay-lab-dsh'
+export const inject = [
+  'webServer', 'agents', 'agentPresets', 'llm', 'sessions', 'sessionProjections',
+  'sessionTitle', 'workspaceRegistry',
+  'tools',
+]
+
+export interface Config {
+  routeBase: string
+  historyFixture: string
+  workspaceFixture: string
+  stateFile: string
+  artifactDirectory: string
+  provider: string
+  fakeAdapter: boolean
+}
+
+export const Config: z<Config> = z.object({
+  routeBase: z.string().default('/replay-lab-dsh'),
+  historyFixture: z.string().required(),
+  workspaceFixture: z.string().required(),
+  stateFile: z.string().required(),
+  artifactDirectory: z.string().required(),
+  provider: z.string().default('replay-lab-fake'),
+  fakeAdapter: z.boolean().default(false),
+})
+
+function baseDirectory(ctx: Context): string {
+  if (ctx.baseUrl === undefined) return process.cwd()
+  try { return dirname(fileURLToPath(new URL('profile-anchor', ctx.baseUrl))) } catch { return ctx.baseUrl }
+}
+
+function absolute(base: string, value: string): string { return resolve(base, value) }
+
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  if (!/^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/.test(config.routeBase)) {
+    throw new TypeError('routeBase 必须是无尾斜杠的绝对路径')
+  }
+  const base = baseDirectory(ctx)
+  const workspaceFixture = absolute(base, config.workspaceFixture)
+  ctx.sessionProjections.register(replayTurnsProjectionDefinition)
+  const resolveTurn = async (identifier: ReplayTurnIdentifier) => {
+    const session = ctx.sessions.get(identifier.sessionId as SessionId)
+    if (session === undefined) throw new Error(`session "${identifier.sessionId}" is not live`)
+    const sourceCwd = session.header.cwd
+    if (typeof sourceCwd !== 'string' || sourceCwd.length === 0) {
+      throw new Error(`session "${identifier.sessionId}" has no durable source cwd`)
+    }
+    const projection = ctx.sessionProjections.snapshot(session).values.replayLabTurns
+    const record = projection?.turns.find(turn => turn.turn === identifier.turn)
+    if (record === undefined) throw new Error(`turn ${identifier.turn} is not finalized in session "${identifier.sessionId}"`)
+    if (!record.replayable || record.evidenceHash === null) {
+      throw new Error(`turn ${identifier.turn} is not replayable: ${record.missingFields.join(', ') || 'incomplete evidence'}`)
+    }
+    if (record.evidenceHash !== identifier.expectedEvidenceHash) {
+      throw new Error(`turn ${identifier.turn} evidence changed; refresh the session projection and try again`)
+    }
+    const presetSurface = record.presetSurface ?? resolveSessionPreset(session) ?? null
+    if (presetSurface === null) throw new Error(`turn ${identifier.turn} has no durable preset/plugin surface`)
+    return { record: { ...record, presetSurface }, sourceCwd }
+  }
+  const service = new ReplayLabService(config.routeBase, resolveTurn)
+  const source = new FixtureCaseSource(absolute(base, config.historyFixture), workspaceFixture)
+  const artifactDirectory = absolute(base, config.artifactDirectory)
+  const store = new JsonArtifactStore(absolute(base, config.stateFile), artifactDirectory)
+  const metrics = new SessionMetricsExtractor()
+  const oracle = new IndependentEvidenceOracle()
+
+  service.registries.caseSources.register(source)
+  service.registries.artifactStores.register(store)
+  service.registries.metricsExtractors.register(metrics)
+  service.registries.oracles.register(oracle)
+  let anchoredStandard: NonNullable<Parameters<typeof builtInVariants>[0]>['anchoredStandard']
+  try {
+    const preset = await ctx.agentPresets.resolve('anchored-standard')
+    anchoredStandard = preset.broken === undefined
+      ? { available: true }
+      : { available: false, reason: `anchored-standard is installed but cannot mount: ${preset.broken}` }
+  } catch (error) {
+    anchoredStandard = {
+      available: false,
+      reason: `Install anchored-standard in this DSH profile and restart the server. ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+  for (const variant of builtInVariants({ anchoredStandard })) service.registries.variants.register(variant)
+  const runner = new CordisAgentRunner(
+    ctx,
+    metrics,
+    id => service.registries.variants.get(id),
+    join(artifactDirectory, 'candidate-workspaces'),
+  )
+  ctx.tools.guard((exec) => {
+    let session = exec.agent?.session
+    while (session !== undefined) {
+      if (String(session.id).startsWith('replay-')) {
+        const cwd = exec.agent?.session.header.cwd
+        return typeof cwd === 'string' && cwd.length > 0
+          ? candidatePathGuard(exec.arguments, cwd)
+          : 'Replay candidate has no isolated workspace boundary.'
+      }
+      session = session.header.parentSession === undefined
+        ? undefined
+        : ctx.sessions.get(session.header.parentSession)
+    }
+    return undefined
+  })
+  service.registries.runners.register(runner)
+  service.registries.hooks.register({
+    id: 'artifact-transition-audit',
+    async onTransition(stage: TransitionStage, experiment: ReplayExperiment) {
+      await store.put('transition', `${experiment.id}-${stage}`, { stage, experiment })
+    },
+  })
+  await service.restore(store)
+
+  if (config.fakeAdapter) ctx.llm.registerAdapter([config.provider], new DeterministicReplayAdapter())
+  ctx.provide('replayLabDsh', service)
+  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: config.routeBase, handler: createHttpHandler(service) }), 'replay-lab-dsh: host route')
+  ctx.effect(() => async () => { await runner.dispose() }, 'replay-lab-dsh: runner lifecycle')
+}

@@ -1,0 +1,51 @@
+name: source-release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'tbxy09/dsh-replay-lab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run verify
+      - name: Build source package artifact
+        run: npm pack --ignore-scripts
+      - name: Verify tag and package version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$(node --print "require('./package.json').version")"
+          test "$version" = "$package_version"
+      - name: Extract matching changelog section
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 == "## " ver || index($0, "## " ver " ") == 1 { emit=1; next }
+            emit && /^## / { exit }
+            emit { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          ./*.tgz
+          --title "$GITHUB_REF_NAME"
+          --notes-file release-notes.md

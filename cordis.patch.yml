@@ -1,0 +1,11 @@
+- insert:
+    - id: replay-lab-dsh
+      name: '@tbxy09/dsh-replay-lab'
+      config:
+        routeBase: /replay-lab-dsh
+        historyFixture: ./fixtures/history-turns.json
+        workspaceFixture: ./fixtures/workspace
+        stateFile: ./.tmp/state.json
+        artifactDirectory: ./.tmp/artifacts
+        provider: replay-lab-fake
+        fakeAdapter: false

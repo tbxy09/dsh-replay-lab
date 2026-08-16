@@ -1,0 +1,209 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { ReplayLabService, type ReplayTurnResolver } from '../src/service.ts'
+import type { ArtifactStore, CaseSource, Runner } from '../src/registries.ts'
+import type { FrozenReplayCase, HistoryTurnSource, LabSnapshot, ReplayableTurnRecord, RunEvidence } from '../src/types.ts'
+import { IndependentEvidenceOracle } from '../src/metrics.ts'
+import { builtInVariants } from '../src/variants.ts'
+
+const baselineMetrics = { freshInputTokens: 11, outputTokens: 7, cacheReadTokens: 3, durationMs: 90, stepCount: 2, toolCalls: 1 }
+const sourceRow: HistoryTurnSource = {
+  id: 'source', kind: 'history', sessionId: 'source-session', turn: 1, title: 'Fixture', createdAt: '2026-08-15T00:00:00.000Z',
+  prompt: 'fixture', provider: 'fake', model: 'fixture', reasoning: 'high', maxTokens: 256,
+  presetSurface: 'standard', systemHash: 'a'.repeat(64), toolSchemaHash: 'b'.repeat(64),
+}
+const replayCase: FrozenReplayCase = {
+  id: 'case', sourceId: 'source', sourceSessionId: 'source-session', sourceTurn: 1, createdAt: sourceRow.createdAt,
+  prompt: sourceRow.prompt, promptHash: 'c'.repeat(64), sourceCwd: '/source/workspace', sourceWorkspaceHash: 'd'.repeat(64),
+  provider: sourceRow.provider, model: 'fixture', reasoning: 'high', maxTokens: 256,
+  presetSurface: 'standard', systemHash: sourceRow.systemHash, toolSchemaHash: sourceRow.toolSchemaHash,
+  observedBaseline: {
+    runId: 'observed-source-session-1', sessionId: 'source-session', variantId: 'observed-current-session',
+    status: 'completed', requestPhases: ['observed'], metrics: baselineMetrics, complete: true, eventCount: 12,
+    evidenceHash: 'observed-hash',
+  },
+}
+
+class MemoryStore implements ArtifactStore {
+  id = 'memory'
+  value: Pick<LabSnapshot, 'replayCase' | 'experiment' | 'history'> = { history: [] }
+  async load() { return this.value }
+  async save(value: Pick<LabSnapshot, 'replayCase' | 'experiment' | 'history'>) { this.value = value }
+  async put() { return 'memory://artifact' }
+}
+
+function caseSource(): CaseSource {
+  return { id: 'source', list: async () => [sourceRow], freeze: async () => replayCase }
+}
+
+function makeService(caseSourceImpl: CaseSource, runner: Runner, resolveTurn?: ReplayTurnResolver): ReplayLabService {
+  const service = new ReplayLabService('/replay-lab-dsh', resolveTurn)
+  service.registries.caseSources.register(caseSourceImpl)
+  service.registries.artifactStores.register(new MemoryStore())
+  service.registries.runners.register(runner)
+  service.registries.oracles.register(new IndependentEvidenceOracle())
+  for (const variant of builtInVariants()) service.registries.variants.register(variant)
+  return service
+}
+
+describe('ReplayLabService', () => {
+  it('uses the native anchored-standard preset and fails closed when it is absent', () => {
+    const available = builtInVariants().find(variant => variant.id === 'anchored')
+    expect(available).toMatchObject({
+      preset: 'anchored-standard', pluginSurface: 'preset:anchored-standard', supported: true,
+    })
+    expect(available?.install).toBeUndefined()
+
+    const unavailable = builtInVariants({
+      anchoredStandard: { available: false, reason: 'not installed' },
+    }).find(variant => variant.id === 'anchored')
+    expect(unavailable).toMatchObject({ supported: false, unsupportedReason: 'not installed' })
+  })
+
+  it('keeps the observed turn fixed and runs only the approved candidate', async () => {
+    let runs = 0
+    const runner: Runner = {
+      id: 'runner',
+      async run({ variant }): Promise<RunEvidence> {
+        runs += 1
+        return {
+          runId: 'candidate-run', sessionId: 'candidate-session', variantId: variant.id, status: 'completed',
+          requestPhases: variant.requestPhases, complete: true, eventCount: 8, evidenceHash: 'candidate-hash',
+          metrics: { freshInputTokens: 5, outputTokens: 2, cacheReadTokens: 1, durationMs: 30, stepCount: 1, toolCalls: 0 },
+        }
+      },
+    }
+    const service = makeService(caseSource(), runner)
+    await service.freeze('source')
+    await service.plan('anchored')
+    expect(runs).toBe(0)
+    expect((await service.snapshot()).experiment).toMatchObject({ status: 'planned', baselineMode: 'observed-current-session', candidateVariantId: 'anchored' })
+
+    await service.approveAndRun()
+    await expect.poll(async () => (await service.snapshot()).experiment?.status).toBe('completed')
+    const experiment = (await service.snapshot()).experiment!
+    expect(runs).toBe(1)
+    expect(experiment.baseline).toEqual(replayCase.observedBaseline)
+    expect(experiment.baseline?.sessionId).toBe('source-session')
+    expect(experiment.candidate?.sessionId).toBe('candidate-session')
+    expect(experiment.scorecard?.rows.find(row => row.key === 'freshInputTokens')).toMatchObject({ baseline: 11, candidate: 5, delta: -6 })
+    expect((await service.snapshot()).history).toEqual([expect.objectContaining({
+      sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment,
+    })])
+
+    const afterBack = await service.reset()
+    expect(afterBack.experiment).toBeUndefined()
+    expect(afterBack.replayCase).toBeUndefined()
+    expect(afterBack.history).toEqual([expect.objectContaining({
+      sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment,
+    })])
+  })
+
+  it('resolves source cwd from the host and freezes observed evidence against it', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-source-cwd-'))
+    try {
+      await writeFile(join(sourceCwd, 'source.txt'), 'durable source', 'utf8')
+      let admitted: { sessionId: string; turn: number; expectedEvidenceHash: string } | undefined
+      const record: ReplayableTurnRecord = {
+        turn: 3, prompt: 'live prompt', provider: 'fake', model: 'm', reasoning: 'high', maxTokens: 2048,
+        presetSurface: 'standard', systemHash: 's', toolSchemaHash: 't', evidenceHash: 'e'.repeat(64),
+        missingFields: [], replayable: true, metrics: baselineMetrics, eventCount: 17, stepCount: 2,
+        completedAt: 1, endReason: 'completed',
+      }
+      const service = makeService(caseSource(), {
+        id: 'runner', run: async () => { throw new Error('must not run during admission') },
+      }, async input => { admitted = input; return { record, sourceCwd } })
+      const snap = await service.admit({ sessionId: 'live-session', turn: 3, expectedEvidenceHash: 'e'.repeat(64) })
+      expect(Object.keys(admitted ?? {}).sort()).toEqual(['expectedEvidenceHash', 'sessionId', 'turn'])
+      expect(snap.replayCase).toMatchObject({ sourceId: 'live-session:3', sourceCwd: resolve(sourceCwd), prompt: 'live prompt' })
+      expect(snap.replayCase?.sourceWorkspaceHash).toHaveLength(64)
+      expect(snap.replayCase?.observedBaseline).toMatchObject({ sessionId: 'live-session', metrics: baselineMetrics })
+      expect(snap.experiment).toBeUndefined()
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
+  })
+
+  it('reopens the latest saved scorecard for the same authoritative turn', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-history-cwd-'))
+    try {
+      await writeFile(join(sourceCwd, 'source.txt'), 'durable source', 'utf8')
+      const record: ReplayableTurnRecord = {
+        turn: 1, prompt: 'live prompt', provider: 'fake', model: 'm', reasoning: 'high', maxTokens: 2048,
+        presetSurface: 'standard', systemHash: 's', toolSchemaHash: 't', evidenceHash: 'e'.repeat(64),
+        missingFields: [], replayable: true, metrics: baselineMetrics, eventCount: 17, stepCount: 2,
+        completedAt: 1, endReason: 'completed',
+      }
+      const runner: Runner = {
+        id: 'runner',
+        run: async ({ variant }) => ({
+          runId: 'saved-run', sessionId: 'candidate-session', variantId: variant.id, status: 'completed',
+          requestPhases: ['request'], metrics: baselineMetrics, complete: true, eventCount: 8,
+          evidenceHash: 'candidate-hash',
+        }),
+      }
+      const service = makeService(caseSource(), runner, async () => ({ record, sourceCwd }))
+      const identifier = { sessionId: 'live-session', turn: 1, expectedEvidenceHash: 'e'.repeat(64) }
+      await service.admit(identifier)
+      await service.plan('standard')
+      await service.approveAndRun()
+      await expect.poll(async () => (await service.snapshot()).experiment?.status).toBe('completed')
+      const savedId = (await service.snapshot()).experiment?.id
+      await service.reset()
+
+      const reopened = await service.admit(identifier)
+      expect(reopened.experiment?.id).toBe(savedId)
+      expect(reopened.experiment?.scorecard).toBeDefined()
+      expect(reopened.history).toHaveLength(1)
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed for a host-plane candidate', async () => {
+    const service = makeService(caseSource(), { id: 'runner', run: async () => { throw new Error('must not run') } })
+    await service.freeze('source')
+    await expect(service.plan('host-provider-switch')).rejects.toThrow(/host-plane/)
+  })
+
+  it('isolates active workbenches by source session', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-session-scope-'))
+    try {
+      await writeFile(join(sourceCwd, 'source.txt'), 'durable source', 'utf8')
+      const service = makeService(caseSource(), {
+        id: 'runner', run: async () => { throw new Error('must not run before approval') },
+      }, async identifier => ({
+        sourceCwd,
+        record: {
+          turn: identifier.turn, prompt: `prompt ${identifier.sessionId}`, provider: 'fake', model: 'm',
+          reasoning: 'high', maxTokens: 2048, presetSurface: 'standard', systemHash: 's', toolSchemaHash: 't',
+          evidenceHash: identifier.expectedEvidenceHash, missingFields: [], replayable: true,
+          metrics: baselineMetrics, eventCount: 3, stepCount: 1, completedAt: 1, endReason: 'completed',
+        },
+      }))
+      const hashA = 'a'.repeat(64)
+      const hashB = 'b'.repeat(64)
+      await service.admit({ sessionId: 'fish-session', turn: 1, expectedEvidenceHash: hashA })
+      await service.admit({ sessionId: 'bookmark-session', turn: 2, expectedEvidenceHash: hashB })
+      await service.plan('anchored', 'fish-session')
+      await service.plan('standard', 'bookmark-session')
+
+      expect(await service.snapshot('fish-session')).toMatchObject({
+        replayCase: { sourceSessionId: 'fish-session', sourceTurn: 1 },
+        experiment: { candidateVariantId: 'anchored' },
+      })
+      expect(await service.snapshot('bookmark-session')).toMatchObject({
+        replayCase: { sourceSessionId: 'bookmark-session', sourceTurn: 2 },
+        experiment: { candidateVariantId: 'standard' },
+      })
+
+      await service.reset('fish-session')
+      expect((await service.snapshot('fish-session')).replayCase).toBeUndefined()
+      expect((await service.snapshot('bookmark-session')).experiment?.candidateVariantId).toBe('standard')
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
+  })
+})
