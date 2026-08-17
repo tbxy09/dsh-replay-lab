@@ -1,8 +1,17 @@
+English | [简体中文](./README.zh-CN.md)
+
 ![Replay Lab run detail showing Anchored Standard, request phases, tool surfaces, and the complete scorecard](./assets/replay-run-detail.png)
 
-# DSH Replay Lab
+# DSH Replay Lab (ReplayLab)
 
 **Replay the request surface, not just the prompt.**
+
+`dsh-replay-lab` is a DeepSeek Harness plugin for replaying completed agent
+turns against different presets or plugins and comparing their request surfaces,
+trajectories, costs, errors, and outcomes.
+
+Use it to reproduce and debug long agent trajectories, repeated tool-call
+loops, no-progress turns, and preset- or plugin-dependent regressions.
 
 Freeze a completed DeepSeek Harness turn, approve one isolated candidate, and
 compare outcome, trajectory, errors, cost, and the request surface that produced

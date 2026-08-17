@@ -20,7 +20,7 @@
       "platform": "web"
     }
   },
-  "files": ["lib", "fixtures", "docs", "assets", "cordis.patch.yml", "README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"],
+  "files": ["lib", "fixtures", "docs", "assets", "cordis.patch.yml", "README.md", "README.zh-CN.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
@@ -34,7 +34,7 @@
   "repository": { "type": "git", "url": "git+https://github.com/tbxy09/dsh-replay-lab.git" },
   "homepage": "https://github.com/tbxy09/dsh-replay-lab#readme",
   "bugs": { "url": "https://github.com/tbxy09/dsh-replay-lab/issues" },
-  "keywords": ["deepseek", "deepseek-harness", "dsh", "dsh-plugin", "agent-evaluation", "agent-observability", "llm-evaluation", "request-surface", "replay", "trajectory"],
+  "keywords": ["deepseek", "deepseek-harness", "dsh", "dsh-plugin", "dsh-replay-lab", "replaylab", "replay-lab", "agent-evaluation", "agent-observability", "llm-evaluation", "request-surface", "replay", "trajectory"],
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1"
   },
