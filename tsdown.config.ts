@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown'
 
-const ID = '@tbxy09/dsh-replay-lab'
+const ID = '@webwalkerhq/dsh-replay-lab'
 const hostExternal = [
   '@deepseek-ai/cordis', '@deepseek-ai/schemastery', '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-agent-presets', '@deepseek-ai/dsh-host-webserver',

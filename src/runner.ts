@@ -261,7 +261,7 @@ export class CordisAgentRunner implements Runner {
       }
       handle.agent.followup(createUserMessage({
         content: [{ type: 'text', text: input.replayCase.prompt }],
-        source: { kind: 'plugin', plugin: '@tbxy09/dsh-replay-lab' },
+        source: { kind: 'plugin', plugin: '@webwalkerhq/dsh-replay-lab' },
       }))
       await handle.agent.whenIdle()
       const events = [...handle.agent.session.events] as readonly unknown[]

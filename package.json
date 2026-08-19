@@ -1,6 +1,6 @@
 {
-  "name": "@tbxy09/dsh-replay-lab",
-  "version": "0.1.2",
+  "name": "@webwalkerhq/dsh-replay-lab",
+  "version": "0.1.3",
   "description": "Replay real DeepSeek Harness turns against Standard, Minimal, Anchored, or plugin candidates with frozen request-surface evidence",
   "type": "module",
   "license": "MIT",

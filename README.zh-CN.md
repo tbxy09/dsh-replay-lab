@@ -306,16 +306,16 @@ Replay Lab 无法通过一次 rerun 证明：
 ## 安装
 
 需要 DeepSeek Harness `0.1.0-rc.6`、Node.js 22.19+ 或 24+，以及 pnpm。
-从 npm 安装固定版本 `v0.1.2`：
+从 npm 安装固定版本 `v0.1.3` 的组织包：
 
 ```sh
-dsh plugin --profile web add @tbxy09/dsh-replay-lab@0.1.2
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.3
 ```
 
 也可以使用相同版本的不可变 GitHub 源码 tag：
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.3
 ```
 
 安装后重启 Web profile：
@@ -324,7 +324,7 @@ dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
 dsh web
 ```
 
-Bundle 会把 `@tbxy09/dsh-replay-lab` 挂载到 `/replay-lab-dsh`，并将其
+Bundle 会把 `@webwalkerhq/dsh-replay-lab` 挂载到 `/replay-lab-dsh`，并将其
 client module 注入 Web profile。
 
 ### 启用 Anchored Standard
@@ -353,11 +353,11 @@ cp -R dsh-anchored-standard/preset "$dsh_home/.agent-presets/anchored-standard"
 ```yaml
 - insert:
     - id: replay-lab-dsh
-      name: '@tbxy09/dsh-replay-lab'
+      name: '@webwalkerhq/dsh-replay-lab'
       config:
         routeBase: /replay-lab-dsh
-        historyFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/history-turns.json
-        workspaceFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/workspace
+        historyFixture: ./node_modules/@webwalkerhq/dsh-replay-lab/fixtures/history-turns.json
+        workspaceFixture: ./node_modules/@webwalkerhq/dsh-replay-lab/fixtures/workspace
         stateFile: ./.tmp/state.json
         artifactDirectory: ./.tmp/artifacts
         provider: replay-lab-fake
