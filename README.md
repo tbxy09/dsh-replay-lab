@@ -1,4 +1,4 @@
-![Replay Lab run detail showing Anchored Standard, request phases, tool surfaces, and the complete scorecard](./assets/replay-run-detail.png)
+![Replay Lab evidence summary comparing the observed baseline with every saved replay run using directly labeled bars](./assets/replay-run-detail.png)
 
 # DSH Replay Lab
 
@@ -78,9 +78,11 @@ Completed DSH turn
 
 ## Replay evidence
 
-The run-detail screenshot above shows the complete baseline/candidate/delta
-scorecard. The following screenshots show language signals where they occur in
-the session chat's thinking rows, not as recreated count labels.
+The run-detail screenshot above compares the observed baseline with every saved
+replay run. Each metric has its own scale and keeps the exact recorded value
+visible; steps and tool calls describe activity, not outcome quality. The
+following screenshots show language signals where they occur in the session
+chat's thinking rows, not as recreated count labels.
 
 ![Anchored Standard session chat with actual Let's and We occurrences boxed in thinking rows](./assets/replay-thinking-anchored.png)
 

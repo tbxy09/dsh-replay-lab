@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { type FrozenReplayCase, type ReplayExperiment, type ReplayHistoryEntry, type RunEvidence, type WorkspaceDriftProvenance } from '../types.ts';
+import { type FrozenReplayCase, type ReplayExperiment, type ReplayHistoryEntry, type RunEvidence, type RunMetrics, type VariantDescriptor, type WorkspaceDriftProvenance } from '../types.ts';
 import type { ReplayTabProps } from './slots.ts';
 declare const metricLabels: {
     readonly freshInputTokens: "Fresh input tokens";
@@ -43,6 +43,15 @@ export declare function WorkspaceDriftNotice({ drift }: {
     drift?: WorkspaceDriftProvenance;
 }): ReactNode;
 export declare function replayHistoryForTurn(history: readonly ReplayHistoryEntry[], sessionId: string, turn: number): readonly ReplayHistoryEntry[];
+interface EvidenceRunColumn {
+    id: string;
+    label: string;
+    detail: string;
+    kind: 'baseline' | 'candidate';
+    metrics?: RunMetrics;
+}
+export declare function allRunEvidenceColumns(replayCase: FrozenReplayCase, experiment: ReplayExperiment, history: readonly ReplayHistoryEntry[], variants: readonly VariantDescriptor[]): readonly EvidenceRunColumn[];
+export declare function metricBarPercent(value: number, maximum: number): number;
 export declare function rawEvidenceDownloadName(replayCase: FrozenReplayCase, experiment: ReplayExperiment): string;
 export declare function rawEvidenceArtifact(replayCase: FrozenReplayCase, experiment: ReplayExperiment, workspaceDrift?: WorkspaceDriftProvenance): object;
 export declare function SessionReplayTab({ useProjection, sessionId, controllerFor }: ReplayTabProps): ReactNode;

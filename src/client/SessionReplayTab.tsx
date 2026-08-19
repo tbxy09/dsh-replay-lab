@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import {
   replayTurnKey, replayTurnTestId, type FrozenReplayCase, type ReplayExperiment,
   type ReplayHistoryEntry, type ReplayableTurnRecord, type RequestSurfaceEvidence,
-  type RunEvidence, type Scorecard, type VariantDescriptor, type WorkspaceDriftProvenance,
+  type RunEvidence, type RunMetrics, type Scorecard, type VariantDescriptor, type WorkspaceDriftProvenance,
 } from '../types.ts'
 import type { ReplayTabProps } from './slots.ts'
 
@@ -20,6 +20,7 @@ const metricLabels = {
   cacheReadTokens: 'Cache read tokens', durationMs: 'Duration',
   stepCount: 'Steps', toolCalls: 'Tool calls',
 } as const
+const metricKeys = Object.keys(metricLabels) as Array<keyof RunMetrics>
 
 export function formatCount(value: number): string {
   return integerFormatter.format(value)
@@ -399,6 +400,83 @@ function SavedRuns({ history, variants, displayedId, onSelect }: {
   })}</div>
 }
 
+interface EvidenceRunColumn {
+  id: string
+  label: string
+  detail: string
+  kind: 'baseline' | 'candidate'
+  metrics?: RunMetrics
+}
+
+export function allRunEvidenceColumns(
+  replayCase: FrozenReplayCase,
+  experiment: ReplayExperiment,
+  history: readonly ReplayHistoryEntry[],
+  variants: readonly VariantDescriptor[],
+): readonly EvidenceRunColumn[] {
+  const retainedHistory = history.map(entry => entry.experiment)
+  const retained = retainedHistory.some(item => item.id === experiment.id)
+    ? retainedHistory
+    : [experiment, ...retainedHistory]
+  const variantLabels = new Map(variants.map(variant => [variant.id, variant.label]))
+  const baseline = experiment.baseline
+    ?? replayCase.observedBaseline
+    ?? retained.find(item => item.baseline !== undefined)?.baseline
+  return [
+    {
+      id: `observed-${replayCase.sourceSessionId}-${replayCase.sourceTurn}`,
+      label: 'Observed baseline',
+      detail: `Turn ${replayCase.sourceTurn}`,
+      kind: 'baseline',
+      metrics: baseline?.metrics,
+    },
+    ...retained.map(item => ({
+      id: item.id,
+      label: variantLabels.get(item.candidateVariantId) ?? item.candidateVariantId,
+      detail: item.candidate?.metrics === undefined
+        ? statusLabel[item.status]
+        : new Date(item.updatedAt).toLocaleString(),
+      kind: 'candidate' as const,
+      metrics: item.candidate?.metrics,
+    })),
+  ]
+}
+
+export function metricBarPercent(value: number, maximum: number): number {
+  if (value <= 0 || maximum <= 0) return 0
+  return Math.max(2, Math.min(100, (value / maximum) * 100))
+}
+
+function AllRunsEvidence({ replayCase, experiment, history, variants }: {
+  replayCase: FrozenReplayCase
+  experiment: ReplayExperiment
+  history: readonly ReplayHistoryEntry[]
+  variants: readonly VariantDescriptor[]
+}): ReactNode {
+  const columns = allRunEvidenceColumns(replayCase, experiment, history, variants)
+  return <section className="rld-result-section rld-result-runs" data-testid="all-runs-evidence">
+    <header><h3>Evidence summary · All runs</h3><span>1 observed baseline · {columns.length - 1} saved {columns.length === 2 ? 'run' : 'runs'}</span></header>
+    <div className="rld-result-table-scroll"><table aria-label="Recorded execution metrics for the observed baseline and all saved replay runs">
+      <thead><tr><th>Metric</th>{columns.map(column => <th key={column.id} data-active={column.id === experiment.id || undefined}>
+        <strong>{column.label}</strong><small>{column.detail}</small>
+      </th>)}</tr></thead>
+      <tbody>{metricKeys.map(key => {
+        const maximum = Math.max(0, ...columns.map(column => column.metrics?.[key] ?? 0))
+        return <tr key={key}><th>{metricLabels[key]}</th>{columns.map(column => {
+          const value = column.metrics?.[key]
+          return <td key={column.id} data-kind={column.kind} data-active={column.id === experiment.id || undefined}>
+            {value === undefined
+              ? <span className="rld-result-empty">Unavailable</span>
+              : <><strong title={String(value)}>{formatMetricValue(key, value)}</strong>
+                <span className="rld-result-bar" aria-hidden="true"><span style={{ width: `${metricBarPercent(value, maximum)}%` }} /></span></>}
+          </td>
+        })}</tr>
+      })}</tbody>
+    </table></div>
+    <p className="rld-result-neutral-note">Bars are scaled within each metric. Steps and tool calls describe activity, not outcome quality.</p>
+  </section>
+}
+
 export function rawEvidenceDownloadName(replayCase: FrozenReplayCase, experiment: ReplayExperiment): string {
   const experimentId = experiment.id.replace(/[^a-zA-Z0-9._-]+/g, '-')
   return `replay-evidence-turn-${replayCase.sourceTurn}-${experimentId}.json`
@@ -465,6 +543,7 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
       </summary>
       <SavedRuns history={history} variants={variants} displayedId={experiment.id} onSelect={onSelectHistory} />
     </details>}
+    <AllRunsEvidence replayCase={replayCase} experiment={experiment} history={history} variants={variants} />
     <details className="rld-result-disclosure rld-result-setup-disclosure">
       <summary><strong>Run setup</strong><span>Observed turn · isolated candidate · explicit approval</span></summary>
       <div className="rld-result-setup-grid">

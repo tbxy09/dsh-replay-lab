@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import {
-  compactIdentifier, compareRequestSurfaces, formatCount, formatDuration, formatMetricDelta,
+  allRunEvidenceColumns, compactIdentifier, compareRequestSurfaces, formatCount, formatDuration, formatMetricDelta,
   formatMetricPercentDelta, formatMetricValue, formatRequestPhase, formatSurface,
-  metricDeltaChange, metricDeltaTone, rawEvidenceArtifact, rawEvidenceDownloadName,
+  metricBarPercent, metricDeltaChange, metricDeltaTone, rawEvidenceArtifact, rawEvidenceDownloadName,
   replayHistoryForTurn, WorkspaceDriftNotice,
   workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
@@ -104,6 +104,28 @@ describe('per-turn replay history', () => {
       entry('fish', 1, 'newer', '2026-08-15T01:00:00.000Z'),
     ]
     expect(replayHistoryForTurn(history, 'fish', 1).map(item => item.experiment.id)).toEqual(['newer', 'older'])
+  })
+
+  it('builds an all-runs evidence view with one observed baseline and every retained candidate', () => {
+    const newer = entry('fish', 1, 'newer', '2026-08-15T01:00:00.000Z')
+    const older = entry('fish', 1, 'older', '2026-08-15T00:00:00.000Z')
+    newer.experiment.baseline = evidence('fish', [])
+    newer.experiment.candidate = evidence('candidate-newer', [])
+    older.experiment.candidate = evidence('candidate-older', [])
+    const replayCase = newer.replayCase
+    if (replayCase === undefined) throw new Error('test fixture must include a replay case')
+
+    expect(allRunEvidenceColumns(replayCase, newer.experiment, [newer, older], [{
+      id: 'standard', label: 'Standard reply', description: '', plane: 'agent',
+      pluginSurface: 'preset:standard', supported: true, requestPhases: ['request'],
+    }])).toMatchObject([
+      { label: 'Observed baseline', detail: 'Turn 1', kind: 'baseline', metrics: { outputTokens: 1 } },
+      { id: 'newer', label: 'Standard reply', kind: 'candidate', metrics: { outputTokens: 1 } },
+      { id: 'older', label: 'Standard reply', kind: 'candidate', metrics: { outputTokens: 1 } },
+    ])
+    expect(metricBarPercent(25, 100)).toBe(25)
+    expect(metricBarPercent(1, 100)).toBe(2)
+    expect(metricBarPercent(0, 100)).toBe(0)
   })
 
   it('builds a portable named artifact from the exact retained replay evidence', () => {
