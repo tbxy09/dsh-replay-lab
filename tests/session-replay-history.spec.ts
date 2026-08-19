@@ -82,6 +82,17 @@ describe('per-turn replay history', () => {
       candidate,
       { provider: 'openrouter', model: 'deepseek-v4-flash', systemHash: 'system-a', toolSchemaHash: 'tools-a' },
     )).toMatchObject({ routeStatus: 'match', toolDiffStatus: 'unknown', toolsAdded: [], toolsRemoved: [] })
+    const repeatedBaselineSurface = baseline.requestSurfaces?.[0]
+    expect(compareRequestSurfaces(
+      baseline,
+      repeatedBaselineSurface === undefined ? undefined : evidence('repeated', [repeatedBaselineSurface, repeatedBaselineSurface]),
+    )).toMatchObject({
+      candidateRoute: ['deepseek-official / deepseek-v4-flash'],
+      candidatePhases: ['request'],
+      candidateSystemHashes: ['system-a'],
+      candidateToolSchemaHashes: ['tools-a'],
+      routeStatus: 'match', phaseStatus: 'match',
+    })
   })
 
   it('filters by source session and turn and orders newest first', () => {

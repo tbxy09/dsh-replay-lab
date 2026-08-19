@@ -127,24 +127,24 @@ export function compareRequestSurfaces(
   const baselineSurfaces = requestSurfaces(baseline)
   const candidateSurfaces = requestSurfaces(candidate)
   const baselineRoute = baselineSurfaces.length > 0
-    ? baselineSurfaces.map(surface => `${surface.provider} / ${surface.model}`)
+    ? unique(baselineSurfaces.map(surface => `${surface.provider} / ${surface.model}`))
     : baselineFallback === undefined ? [] : [`${baselineFallback.provider} / ${baselineFallback.model}`]
-  const candidateRoute = candidateSurfaces.map(surface => `${surface.provider} / ${surface.model}`)
-  const baselinePhases = baseline?.requestPhases ?? baselineSurfaces.map(surface => surface.phase)
-  const candidatePhases = candidate?.requestPhases ?? candidateSurfaces.map(surface => surface.phase)
+  const candidateRoute = unique(candidateSurfaces.map(surface => `${surface.provider} / ${surface.model}`))
+  const baselinePhases = unique(baseline?.requestPhases ?? baselineSurfaces.map(surface => surface.phase))
+  const candidatePhases = unique(candidate?.requestPhases ?? candidateSurfaces.map(surface => surface.phase))
   const baselineTools = unique(baselineSurfaces.flatMap(surface => surface.toolNames))
   const candidateTools = unique(candidateSurfaces.flatMap(surface => surface.toolNames))
   const baselineToolSet = new Set(baselineTools)
   const candidateToolSet = new Set(candidateTools)
   const toolDiffKnown = baselineSurfaces.length > 0 && candidateSurfaces.length > 0
   const baselineSystemHashes = baselineSurfaces.length > 0
-    ? baselineSurfaces.map(surface => surface.systemHash)
+    ? unique(baselineSurfaces.map(surface => surface.systemHash))
     : baselineFallback === undefined ? [] : [baselineFallback.systemHash]
-  const candidateSystemHashes = candidateSurfaces.map(surface => surface.systemHash)
+  const candidateSystemHashes = unique(candidateSurfaces.map(surface => surface.systemHash))
   const baselineToolSchemaHashes = baselineSurfaces.length > 0
-    ? baselineSurfaces.map(surface => surface.toolSchemaHash)
+    ? unique(baselineSurfaces.map(surface => surface.toolSchemaHash))
     : baselineFallback === undefined ? [] : [baselineFallback.toolSchemaHash]
-  const candidateToolSchemaHashes = candidateSurfaces.map(surface => surface.toolSchemaHash)
+  const candidateToolSchemaHashes = unique(candidateSurfaces.map(surface => surface.toolSchemaHash))
   return {
     baselineRoute,
     candidateRoute,
@@ -434,13 +434,6 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
   onSelectHistory: (experimentId: string) => void
 }): ReactNode {
   return <main className="rld-result" data-testid="session-replay-result">
-    <EvidenceValidityStrip
-      baseline={experiment.baseline}
-      candidate={experiment.candidate}
-      scorecard={experiment.scorecard}
-      workspaceDrift={workspaceDrift}
-      baselineFallback={replayCase}
-    />
     {workspaceDrift?.detected === true && <WorkspaceDriftNotice drift={workspaceDrift} />}
     <RequestSurfaceDiff baseline={experiment.baseline} candidate={experiment.candidate} baselineFallback={replayCase} />
     <ExecutionDelta scorecard={experiment.scorecard} missingReason={experiment.scorecardMissingReason} />
@@ -488,7 +481,7 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
 
   return (
     <div className="rld-session-workbench" data-testid="session-replay-workbench">
-      <header className="rld-session-workbench-header">
+      <header className="rld-session-workbench-header" data-result={completedResult || undefined}>
         <button type="button" onClick={onBack}>← Choose another turn</button>
         <div>
           <h2>{completedResult ? `Turn ${replayCase.sourceTurn} comparison` : `Current session · Turn ${replayCase.sourceTurn}`}</h2>
@@ -497,6 +490,13 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
             : 'This observed baseline is fixed. Choose one isolated candidate, then explicitly approve its run.'}</p>
         </div>
         {displayedExperiment !== undefined && <strong data-status={displayedExperiment.status}>{statusLabel[displayedExperiment.status]}</strong>}
+        {completedResult && displayedExperiment !== undefined && <EvidenceValidityStrip
+          baseline={displayedExperiment.baseline}
+          candidate={displayedExperiment.candidate}
+          scorecard={displayedExperiment.scorecard}
+          workspaceDrift={displayedDrift}
+          baselineFallback={replayCase}
+        />}
       </header>
 
       {state.error !== undefined && <div className="rld-session-error" role="alert">{state.error}</div>}
