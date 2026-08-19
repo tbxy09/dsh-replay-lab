@@ -7,6 +7,7 @@ interface RequestEvidence {
     maxTokens: number | null;
     systemHash: string;
     toolSchemaHash: string;
+    toolNames: readonly string[];
 }
 interface OpenTurn {
     turn: number;
@@ -19,6 +20,7 @@ interface OpenTurn {
     toolCalls: number;
     eventCount: number;
     outputEvidence: string[];
+    callEvents: unknown[];
 }
 interface ReplayTurnsState {
     presetSurface: string | null;

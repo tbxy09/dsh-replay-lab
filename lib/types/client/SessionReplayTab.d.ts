@@ -19,6 +19,7 @@ export declare function metricDeltaTone(key: keyof typeof metricLabels, value: n
 export declare function formatRequestPhase(phase: string): string;
 export declare function formatSurface(surface: string): string;
 export declare function compactIdentifier(value: string): string;
+export declare function routeMismatchLabel(value: boolean | null): 'Route mismatch' | 'Route match' | 'Unknown';
 type ComparisonStatus = 'match' | 'mismatch' | 'unknown';
 export interface RequestSurfaceComparison {
     baselineRoute: readonly string[];

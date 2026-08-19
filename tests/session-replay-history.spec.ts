@@ -4,7 +4,7 @@ import {
   allRunEvidenceColumns, compactIdentifier, compareRequestSurfaces, formatCount, formatDuration, formatMetricDelta,
   formatMetricPercentDelta, formatMetricValue, formatRequestPhase, formatSurface,
   metricBarPercent, metricDeltaChange, metricDeltaTone, rawEvidenceArtifact, rawEvidenceDownloadName,
-  replayHistoryForTurn, WorkspaceDriftNotice,
+  replayHistoryForTurn, routeMismatchLabel, WorkspaceDriftNotice,
   workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
 import type { ReplayHistoryEntry, RequestSurfaceEvidence, RunEvidence } from '../src/types.ts'
@@ -36,6 +36,12 @@ function evidence(sessionId: string, surfaces: readonly RequestSurfaceEvidence[]
 }
 
 describe('per-turn replay history', () => {
+  it('labels durable route lineage independently from request-surface comparison', () => {
+    expect(routeMismatchLabel(true)).toBe('Route mismatch')
+    expect(routeMismatchLabel(false)).toBe('Route match')
+    expect(routeMismatchLabel(null)).toBe('Unknown')
+  })
+
   it('formats dense replay evidence for people while preserving exact values elsewhere', () => {
     expect(formatCount(326696)).toBe('326,696')
     expect(formatDuration(458288)).toBe('7 min 38 s')

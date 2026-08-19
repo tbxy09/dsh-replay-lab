@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -19,6 +20,8 @@ import { candidatePathGuard, DeterministicReplayAdapter, CordisAgentRunner } fro
 import { ReplayLabService } from './service.ts'
 import { builtInVariants } from './variants.ts'
 import { replayTurnsProjectionDefinition } from './replay-turn-projection.ts'
+import { RouteLineageMonitor, type DurableSessionRouteLog } from './route-lineage.ts'
+import { DirectRuntimeEvidenceSummarizer } from './evidence-summary.ts'
 import type { ReplayExperiment, ReplayTurnIdentifier, TransitionStage } from './types.ts'
 
 export * from './types.ts'
@@ -29,6 +32,9 @@ export { JsonArtifactStore } from './artifact-store.ts'
 export { SessionMetricsExtractor, IndependentEvidenceOracle } from './metrics.ts'
 export { CordisAgentRunner, DeterministicReplayAdapter } from './runner.ts'
 export { builtInVariants } from './variants.ts'
+export * from './route-lineage.ts'
+export * from './call-evidence.ts'
+export * from './evidence-summary.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { replayLabDsh: ReplayLabService }
@@ -95,10 +101,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (presetSurface === null) throw new Error(`turn ${identifier.turn} has no durable preset/plugin surface`)
     return { record: { ...record, presetSurface }, sourceCwd }
   }
-  const service = new ReplayLabService(config.routeBase, resolveTurn)
   const source = new FixtureCaseSource(absolute(base, config.historyFixture), workspaceFixture)
   const artifactDirectory = absolute(base, config.artifactDirectory)
   const store = new JsonArtifactStore(absolute(base, config.stateFile), artifactDirectory)
+  const sessionLogs = (): DurableSessionRouteLog[] => ctx.sessions.list().map(session => ({
+    sessionId: String(session.header.id),
+    header: session.header,
+    events: session.events,
+  }))
+  const routeLineage = new RouteLineageMonitor(sessionLogs, async evidence => {
+    const id = createHash('sha256').update(evidence.childSessionId).digest('hex').slice(0, 24)
+    await store.put('route-lineage', id, evidence)
+  })
+  routeLineage.restore(await store.loadRouteLineageEvidence())
+  await routeLineage.refresh()
+  const service = new ReplayLabService(config.routeBase, resolveTurn, async sessionId => {
+    await routeLineage.refresh()
+    return routeLineage.list(sessionId)
+  }, new DirectRuntimeEvidenceSummarizer(ctx.llm))
   const metrics = new SessionMetricsExtractor()
   const oracle = new IndependentEvidenceOracle()
 
@@ -148,6 +168,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     },
   })
   await service.restore(store)
+
+  const refreshRouteLineage = (): void => {
+    void routeLineage.refresh().catch(error => {
+      ctx.logger.warn('Replay Lab route-lineage evidence capture failed: %s', error instanceof Error ? error.message : String(error))
+    })
+  }
+  ctx.on('session/created', refreshRouteLineage)
+  ctx.on('session/event', (_session, event) => {
+    if (event.type === 'request/header') refreshRouteLineage()
+  })
 
   if (config.fakeAdapter) ctx.llm.registerAdapter([config.provider], new DeterministicReplayAdapter())
   ctx.provide('replayLabDsh', service)

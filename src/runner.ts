@@ -13,6 +13,7 @@ import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { evidenceDigest } from './metrics.ts'
+import { extractRawCallEvidence } from './call-evidence.ts'
 import { canonicalJson, hashDirectory, sha256 } from './hash.ts'
 import type { MetricsExtractor, Runner, VariantContributor } from './registries.ts'
 import type {
@@ -266,6 +267,7 @@ export class CordisAgentRunner implements Runner {
       await handle.agent.whenIdle()
       const events = [...handle.agent.session.events] as readonly unknown[]
       const metrics = this.metrics.extract(events)
+      const callEvidence = extractRawCallEvidence(events)
       const requestSurfaces = requestSurfaceEvidence(events, variant.behavior)
       const requestPhases = requestSurfaces.length > 0
         ? requestSurfaces.map(surface => surface.phase)
@@ -277,6 +279,7 @@ export class CordisAgentRunner implements Runner {
         status: metrics === undefined ? 'failed' : 'completed',
         requestPhases: Object.freeze([...requestPhases]),
         requestSurfaces: Object.freeze(requestSurfaces),
+        ...(callEvidence === undefined ? {} : { callEvidence }),
         ...(metrics === undefined ? { complete: false, missingReason: 'session 未形成完整 turn/end evidence' } : { metrics, complete: true }),
         eventCount: events.length,
         evidenceHash: evidenceDigest(sessionId, events),
@@ -284,6 +287,7 @@ export class CordisAgentRunner implements Runner {
       }
     } catch (error) {
       const events = handle === undefined ? [] : [...handle.agent.session.events]
+      const callEvidence = extractRawCallEvidence(events)
       return {
         runId,
         sessionId,
@@ -294,6 +298,7 @@ export class CordisAgentRunner implements Runner {
         missingReason: error instanceof Error ? error.message : String(error),
         eventCount: events.length,
         evidenceHash: evidenceDigest(sessionId, events),
+        ...(callEvidence === undefined ? {} : { callEvidence }),
         ...(workspace === undefined ? {} : { workspace: workspace.provenance }),
       }
     }

@@ -1,19 +1,23 @@
 import type { ArtifactStore } from './registries.ts';
 import { ReplayLabRegistries } from './registries.ts';
-import type { LabSnapshot, ReplayableTurnRecord, ReplayTurnIdentifier } from './types.ts';
+import type { EvidenceSummarizer } from './evidence-summary.ts';
+import type { LabSnapshot, ReplayableTurnRecord, ReplayTurnIdentifier, RouteLineageEvidence } from './types.ts';
 export interface ResolvedReplayTurn {
     record: ReplayableTurnRecord;
     sourceCwd: string;
 }
 export type ReplayTurnResolver = (identifier: ReplayTurnIdentifier) => Promise<ResolvedReplayTurn>;
+export type RouteLineageResolver = (sessionId?: string) => Promise<readonly RouteLineageEvidence[]>;
 export declare class ReplayLabService {
     readonly routeBase: string;
     private readonly resolveTurn?;
+    private readonly resolveRouteLineage?;
+    private readonly evidenceSummarizer?;
     readonly registries: ReplayLabRegistries;
     private readonly drafts;
     private history;
     private readonly running;
-    constructor(routeBase: string, resolveTurn?: ReplayTurnResolver | undefined);
+    constructor(routeBase: string, resolveTurn?: ReplayTurnResolver | undefined, resolveRouteLineage?: RouteLineageResolver | undefined, evidenceSummarizer?: EvidenceSummarizer | undefined);
     restore(store: ArtifactStore): Promise<void>;
     private source;
     private store;
@@ -29,6 +33,8 @@ export declare class ReplayLabService {
     approveAndRun(requestedSessionId?: string): Promise<LabSnapshot>;
     abort(requestedSessionId?: string): Promise<LabSnapshot>;
     reset(requestedSessionId?: string): Promise<LabSnapshot>;
+    /** Explicitly spend one direct model-runtime call to narrate retained raw evidence. */
+    summarize(experimentId: string, requestedSessionId?: string): Promise<LabSnapshot>;
     private execute;
     private requireVariant;
     private transition;

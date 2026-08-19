@@ -72,6 +72,11 @@ export function createHttpHandler(service: ReplayLabService) {
       if (req.method === 'POST' && path === 'approve-run') {
         respond(res, 202, success(await service.approveAndRun(asSessionId(await body(req))))); return
       }
+      if (req.method === 'POST' && path === 'summarize') {
+        const value = await body(req)
+        if (typeof value.experimentId !== 'string' || value.experimentId.length === 0) throw new Error('experimentId is required')
+        respond(res, 200, success(await service.summarize(value.experimentId, asSessionId(value)))); return
+      }
       if (req.method === 'POST' && path === 'abort') {
         respond(res, 200, success(await service.abort(asSessionId(await body(req))))); return
       }

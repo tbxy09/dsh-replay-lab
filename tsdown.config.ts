@@ -1,6 +1,25 @@
 import { defineConfig } from 'tsdown'
 
 const ID = '@webwalkerhq/dsh-replay-lab'
+// Local profiles may mount this checkout under a graph alias. The browser
+// module loader keys factories by that graph id, which is encoded in the
+// stable /plugins/<graph-id>/client.js script URL.
+const clientRegistrationId = `(() => {
+  const fallback = ${JSON.stringify(ID)};
+  try {
+    const source = document.currentScript?.src;
+    if (typeof source !== "string") return fallback;
+    const pathname = new URL(source, window.location.href).pathname;
+    const marker = "/plugins/";
+    const suffix = "/client.js";
+    const start = pathname.lastIndexOf(marker);
+    if (start < 0 || !pathname.endsWith(suffix)) return fallback;
+    const id = decodeURIComponent(pathname.slice(start + marker.length, -suffix.length));
+    return id.length === 0 ? fallback : id;
+  } catch {
+    return fallback;
+  }
+})()`
 const hostExternal = [
   '@deepseek-ai/cordis', '@deepseek-ai/schemastery', '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-agent-presets', '@deepseek-ai/dsh-host-webserver',
@@ -40,7 +59,7 @@ export default defineConfig([
     noExternal: (id: string) => clientExternal.includes(id) ? undefined : true,
     outputOptions: {
       entryFileNames: 'client.js',
-      banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(ID)}, factory: (require) => {`,
+      banner: `window.__ModuleLoader__.load({ id: ${clientRegistrationId}, factory: (require) => {`,
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
     },

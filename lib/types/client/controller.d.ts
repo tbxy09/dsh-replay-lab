@@ -22,6 +22,7 @@ export declare class ReplayLabController {
     admit(identifier: ReplayTurnIdentifier): Promise<void>;
     plan(candidateVariantId: string): Promise<void>;
     approveRun(): Promise<void>;
+    summarize(experimentId: string): Promise<void>;
     reset(): Promise<void>;
     abort(): Promise<void>;
     private requireSessionId;

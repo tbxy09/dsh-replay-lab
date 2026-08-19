@@ -53,6 +53,13 @@ describe('replay turn session projection', () => {
     expect(projection.turns[0]).toMatchObject({ prompt: 'one', stepCount: 2, replayable: true })
     expect(projection.turns[1]).toMatchObject({ prompt: 'two', stepCount: 1, model: 'deepseek-v4', replayable: true })
     expect(projection.turns[0]?.metrics).toMatchObject({ freshInputTokens: 10, outputTokens: 4, cacheReadTokens: 3 })
+    expect(projection.turns[0]?.callEvidence).toMatchObject({
+      schemaVersion: 'raw-call-evidence/v1', turn: 1,
+      metrics: { toolCallCount: 0, toolRetryCount: 0, maxProgresslessSpan: 2 },
+    })
+    expect(projection.turns[0]?.requestSurface).toMatchObject({
+      phase: 'observed', provider: 'deepseek', model: 'deepseek-v4', toolNames: ['read'],
+    })
     expect(projection.turns[1]?.metrics).toMatchObject({ freshInputTokens: 20, outputTokens: 5, cacheReadTokens: 6 })
   })
 

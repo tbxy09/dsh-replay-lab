@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { JsonArtifactStore } from '../src/artifact-store.ts'
+import { matchRouteLineage } from '../src/route-lineage.ts'
 import type { FrozenReplayCase, ReplayExperiment } from '../src/types.ts'
 
 const replayCase = {
@@ -22,6 +23,30 @@ const experiment = {
 } satisfies ReplayExperiment
 
 describe('JsonArtifactStore replay history', () => {
+  it('restores only valid durable route-lineage artifacts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'rld-store-lineage-'))
+    const artifacts = join(directory, 'artifacts')
+    try {
+      const store = new JsonArtifactStore(join(directory, 'state.json'), artifacts)
+      const evidence = matchRouteLineage(
+        {
+          sessionId: 'parent', header: { id: 'parent', createdAt: 1 },
+          events: [{ type: 'request/header', seq: 0, time: 10, data: { header: { config: { provider: 'deepseek', model: 'new' } } } }],
+        },
+        {
+          sessionId: 'child', header: { id: 'child', createdAt: 20, parentSession: 'parent', origin: 'subagent' },
+          events: [{ type: 'request/header', seq: 0, time: 21, data: { header: { config: { provider: 'deepseek', model: 'old' } } } }],
+        },
+      )
+      expect(evidence).toBeDefined()
+      await store.put('route-lineage', 'valid', evidence)
+      await store.put('route-lineage', 'invalid', { schemaVersion: 'route-lineage/v1', routeMismatch: false })
+      expect(await store.loadRouteLineageEvidence()).toEqual([evidence])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('migrates a terminal v1 result and writes durable v2 history', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'rld-store-'))
     const file = join(directory, 'state.json')

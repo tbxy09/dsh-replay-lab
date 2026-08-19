@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { extractRawCallEvidence } from './call-evidence.ts'
 import { canonicalJson, sha256 } from './hash.ts'
-import type { ReplayableTurnRecord, ReplayTurnsProjection, RunMetrics } from './types.ts'
+import type { RawCallEvidence, ReplayableTurnRecord, ReplayTurnsProjection, RequestSurfaceEvidence, RunMetrics } from './types.ts'
 
 interface RequestEvidence {
   provider: string | null
@@ -11,6 +12,7 @@ interface RequestEvidence {
   maxTokens: number | null
   systemHash: string
   toolSchemaHash: string
+  toolNames: readonly string[]
 }
 
 interface OpenTurn {
@@ -24,6 +26,7 @@ interface OpenTurn {
   toolCalls: number
   eventCount: number
   outputEvidence: string[]
+  callEvents: unknown[]
 }
 
 interface ReplayTurnsState {
@@ -39,10 +42,38 @@ const metricsSchema = z.object({
   cacheReadTokens: z.number().nonnegative(), durationMs: z.number().nonnegative(),
   stepCount: z.number().int().nonnegative(), toolCalls: z.number().int().nonnegative(),
 }).strict()
+const callEvidenceSchema: z.ZodType<RawCallEvidence> = z.object({
+  schemaVersion: z.literal('raw-call-evidence/v1'),
+  turn: z.number().int().nonnegative(), startedAt: z.number().nonnegative(), endedAt: z.number().nonnegative(),
+  calls: z.array(z.object({
+    evidenceId: z.string(), turn: z.number().int().nonnegative(), step: z.number().int().nonnegative(),
+    startedAt: z.number().nonnegative(), finishedAt: z.number().nonnegative().optional(), firstOutputAt: z.number().nonnegative().optional(),
+    assistantContent: z.unknown().optional(), effective: z.boolean(),
+    toolCalls: z.array(z.object({
+      evidenceId: z.string(), callId: z.string(), name: z.string(), calledAt: z.number().nonnegative(),
+      arguments: z.string(), normalizedCallHash: z.string(), retryOf: z.string().optional(), effective: z.boolean(),
+      result: z.object({
+        completedAt: z.number().nonnegative(), durationMs: z.number().nonnegative(), status: z.enum(['success', 'error']),
+        errorCode: z.string().optional(), content: z.unknown(), contentHash: z.string(),
+      }).strict().optional(),
+    }).strict()),
+  }).strict()),
+  metrics: z.object({
+    toolCallCount: z.number().int().nonnegative(), toolRetryCount: z.number().int().nonnegative(),
+    toolRetryRatePercent: z.number().nonnegative(), maxProgresslessSpan: z.number().int().nonnegative(),
+    firstEffectiveActionLatencyMs: z.number().nonnegative().nullable(),
+  }).strict(),
+}).strict()
 const recordSchema = z.object({
   turn: z.number().int().positive(), prompt: nullableString, provider: nullableString,
   model: nullableString, reasoning: nullableString, maxTokens: z.number().int().positive().nullable(),
   presetSurface: nullableString, systemHash: nullableString, toolSchemaHash: nullableString,
+  requestSurface: z.object({
+    phase: z.string().min(1), provider: z.string().min(1), model: z.string().min(1),
+    reasoning: z.string().min(1).optional(), maxTokens: z.number().int().positive().optional(),
+    systemHash: z.string().min(1), toolSchemaHash: z.string().min(1), toolNames: z.array(z.string()),
+  }).strict().optional(),
+  callEvidence: callEvidenceSchema.optional(),
   evidenceHash: nullableString, missingFields: z.array(z.string()), replayable: z.boolean(),
   metrics: metricsSchema.nullable(), eventCount: z.number().int().nonnegative(),
   stepCount: z.number().int().nonnegative(), completedAt: z.number().nonnegative(), endReason: z.string().min(1),
@@ -63,6 +94,10 @@ function textOfUser(event: Extract<SessionEvent, { type: 'user/message' }>): str
 
 function requestEvidence(event: Extract<SessionEvent, { type: 'request/header' }>): RequestEvidence {
   const { header } = event.data
+  const toolNames = (header.tools ?? []).flatMap(tool => {
+    const name = typeof tool === 'object' && tool !== null && 'name' in tool ? tool.name : undefined
+    return typeof name === 'string' && name.length > 0 ? [name] : []
+  })
   return {
     provider: header.config.provider || null,
     model: header.config.model || null,
@@ -71,13 +106,19 @@ function requestEvidence(event: Extract<SessionEvent, { type: 'request/header' }
       ? header.config.maxTokens ?? null : null,
     systemHash: sha256(canonicalJson(header.system ?? null)),
     toolSchemaHash: sha256(canonicalJson(header.tools ?? [])),
+    toolNames: Object.freeze(toolNames),
   }
 }
 
 function observe(state: ReplayTurnsState, event: SessionEvent): ReplayTurnsState {
   const open = state.openTurn
   if (open === null || event.type === 'turn/start') return state
-  let next: OpenTurn = { ...open, eventCount: open.eventCount + 1 }
+  const capturesCallEvidence = ['step/start', 'step/end', 'assistant/chunk', 'assistant/message', 'tool/call', 'tool/result', 'turn/end'].includes(event.type)
+  let next: OpenTurn = {
+    ...open,
+    eventCount: open.eventCount + 1,
+    callEvents: capturesCallEvidence ? [...open.callEvents, event] : open.callEvents,
+  }
   if (event.type === 'step/start' && event.data.turn === open.turn) next.stepCount += 1
   if (event.type === 'tool/call' && event.data.turn === open.turn) {
     next.toolCalls += 1
@@ -99,6 +140,7 @@ function finalized(state: ReplayTurnsState, event: Extract<SessionEvent, { type:
   const open = state.openTurn?.turn === event.data.turn ? state.openTurn : null
   const prompt = open === null ? null : open.promptParts.join('\n\n').trim() || null
   const request = state.request
+  const callEvidence = open === null ? undefined : extractRawCallEvidence(open.callEvents, event.data.turn)
   const metrics: RunMetrics | null = open === null ? null : {
     freshInputTokens: open.freshInputTokens, outputTokens: open.outputTokens,
     cacheReadTokens: open.cacheReadTokens, durationMs: Math.max(0, event.time - open.startedAt),
@@ -116,13 +158,24 @@ function finalized(state: ReplayTurnsState, event: Extract<SessionEvent, { type:
   const facts = missingFields.length === 0 && prompt !== null && request !== null && metrics !== null
     ? { prompt, provider: request.provider, model: request.model, reasoning: request.reasoning,
         maxTokens: request.maxTokens, systemHash: request.systemHash, toolSchemaHash: request.toolSchemaHash,
-        metrics, outputEvidence: open?.outputEvidence ?? [], endReason: event.data.reason.kind }
+        metrics, callEvidence, outputEvidence: open?.outputEvidence ?? [], endReason: event.data.reason.kind }
     : null
+  const requestSurface: RequestSurfaceEvidence | undefined = request === null || request.provider === null || request.model === null
+    ? undefined
+    : {
+        phase: 'observed', provider: request.provider, model: request.model,
+        ...(request.reasoning === null ? {} : { reasoning: request.reasoning }),
+        ...(request.maxTokens === null ? {} : { maxTokens: request.maxTokens }),
+        systemHash: request.systemHash, toolSchemaHash: request.toolSchemaHash,
+        toolNames: request.toolNames,
+      }
   return {
     turn: event.data.turn, prompt, provider: request?.provider ?? null, model: request?.model ?? null,
     reasoning: request?.reasoning ?? null, maxTokens: request?.maxTokens ?? null,
     presetSurface: state.presetSurface, systemHash: request?.systemHash ?? null,
     toolSchemaHash: request?.toolSchemaHash ?? null,
+    ...(requestSurface === undefined ? {} : { requestSurface }),
+    ...(callEvidence === undefined ? {} : { callEvidence }),
     evidenceHash: facts === null ? null : sha256(canonicalJson(facts)), missingFields,
     replayable: facts !== null, metrics, eventCount: open?.eventCount ?? 0,
     stepCount: metrics?.stepCount ?? 0, completedAt: event.time, endReason: event.data.reason.kind,
@@ -131,7 +184,7 @@ function finalized(state: ReplayTurnsState, event: Extract<SessionEvent, { type:
 
 /** Native whole-log projection serving live updates and cache-backed historical backfill. */
 export const replayTurnsProjectionDefinition: ProjectionDefinition<'replayLabTurns', ReplayTurnsState> = {
-  key: 'replayLabTurns', schema: projectionSchema, stateVersion: 2,
+  key: 'replayLabTurns', schema: projectionSchema, stateVersion: 4,
   init: () => ({ presetSurface: null, request: null, openTurn: null, turns: [] }),
   apply: (prior, event) => {
     const state = observe(prior, event)
@@ -141,6 +194,7 @@ export const replayTurnsProjectionDefinition: ProjectionDefinition<'replayLabTur
       case 'turn/start': return { ...state, openTurn: {
         turn: event.data.turn, startedAt: event.time, promptParts: [], freshInputTokens: 0,
         outputTokens: 0, cacheReadTokens: 0, stepCount: 0, toolCalls: 0, eventCount: 1, outputEvidence: [],
+        callEvents: [event],
       } }
       case 'user/message': {
         if (state.openTurn === null) return state

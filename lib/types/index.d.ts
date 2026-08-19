@@ -9,6 +9,9 @@ export { JsonArtifactStore } from './artifact-store.ts';
 export { SessionMetricsExtractor, IndependentEvidenceOracle } from './metrics.ts';
 export { CordisAgentRunner, DeterministicReplayAdapter } from './runner.ts';
 export { builtInVariants } from './variants.ts';
+export * from './route-lineage.ts';
+export * from './call-evidence.ts';
+export * from './evidence-summary.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         replayLabDsh: ReplayLabService;
