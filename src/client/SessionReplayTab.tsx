@@ -214,29 +214,6 @@ function comparisonLabel(status: ComparisonStatus): string {
   return status === 'match' ? 'Match' : status === 'mismatch' ? 'Changed' : 'Unknown'
 }
 
-function EvidenceValidityStrip({ baseline, candidate, workspaceDrift, baselineFallback }: {
-  baseline?: RunEvidence
-  candidate?: RunEvidence
-  workspaceDrift?: WorkspaceDriftProvenance
-  baselineFallback?: Pick<FrozenReplayCase, 'provider' | 'model' | 'systemHash' | 'toolSchemaHash'>
-}): ReactNode {
-  const comparison = compareRequestSurfaces(baseline, candidate, baselineFallback)
-  const routeTone = comparison.routeStatus === 'match' ? 'good' : comparison.routeStatus === 'mismatch' ? 'warning' : 'unknown'
-  const workspaceTone = workspaceDrift === undefined ? 'unknown' : workspaceDrift.detected ? 'warning' : 'good'
-  return <section className="rld-result-validity" aria-label="Evidence validity">
-    <div data-tone={routeTone}>
-      <span className="rld-result-validity-icon" aria-hidden="true">{comparison.routeStatus === 'match' ? '↔' : comparison.routeStatus === 'mismatch' ? '!' : '?'}</span>
-      <span><strong>Route · {comparison.routeStatus === 'match' ? 'Match' : comparison.routeStatus === 'mismatch' ? 'Mismatch' : 'Unknown'}</strong>
-        <small>Compared from recorded provider / model request headers.</small></span>
-    </div>
-    <div data-tone={workspaceTone}>
-      <span className="rld-result-validity-icon" aria-hidden="true">{workspaceDrift === undefined ? '?' : workspaceDrift.detected ? '!' : '✓'}</span>
-      <span><strong>Workspace · {workspaceDrift === undefined ? 'Unknown' : workspaceDrift.detected ? 'Drift' : 'No drift'}</strong>
-        <small>{workspaceDrift?.detected === true ? 'Candidate copied a changed source state.' : workspaceDrift === undefined ? 'Legacy provenance has no drift witness.' : 'Frozen and copied source hashes match.'}</small></span>
-    </div>
-  </section>
-}
-
 function ReplayWorkflowGuide(): ReactNode {
   return <ol className="rld-replay-guide" aria-label="Replay workflow">
     <li><span>1</span><strong>Run setup</strong></li>
@@ -544,12 +521,6 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
         </div>
         {displayedExperiment !== undefined && (!completedResult || history.length === 0)
           && <strong data-status={displayedExperiment.status}>{statusLabel[displayedExperiment.status]}</strong>}
-        {completedResult && displayedExperiment !== undefined && <EvidenceValidityStrip
-          baseline={displayedExperiment.baseline}
-          candidate={displayedExperiment.candidate}
-          workspaceDrift={displayedDrift}
-          baselineFallback={replayCase}
-        />}
       </header>
 
       {state.error !== undefined && <div className="rld-session-error" role="alert">{state.error}</div>}
