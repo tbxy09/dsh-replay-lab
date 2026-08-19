@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { type ReplayHistoryEntry, type WorkspaceDriftProvenance } from '../types.ts';
+import { type FrozenReplayCase, type ReplayHistoryEntry, type RunEvidence, type WorkspaceDriftProvenance } from '../types.ts';
 import type { ReplayTabProps } from './slots.ts';
 declare const metricLabels: {
     readonly freshInputTokens: "Fresh input tokens";
@@ -14,9 +14,30 @@ export declare function formatDuration(milliseconds: number): string;
 export declare function formatMetricValue(key: keyof typeof metricLabels, value: number): string;
 export declare function formatMetricDelta(key: keyof typeof metricLabels, value: number): string;
 export declare function metricDeltaChange(value: number): 'increase' | 'decrease' | 'unchanged';
+export declare function formatMetricPercentDelta(baseline: number, delta: number): string | undefined;
+export declare function metricDeltaTone(key: keyof typeof metricLabels, value: number): 'increase' | 'decrease' | 'unchanged' | 'neutral';
 export declare function formatRequestPhase(phase: string): string;
 export declare function formatSurface(surface: string): string;
 export declare function compactIdentifier(value: string): string;
+type ComparisonStatus = 'match' | 'mismatch' | 'unknown';
+export interface RequestSurfaceComparison {
+    baselineRoute: readonly string[];
+    candidateRoute: readonly string[];
+    routeStatus: ComparisonStatus;
+    baselinePhases: readonly string[];
+    candidatePhases: readonly string[];
+    phaseStatus: ComparisonStatus;
+    toolDiffStatus: 'known' | 'unknown';
+    toolsAdded: readonly string[];
+    toolsRemoved: readonly string[];
+    baselineSystemHashes: readonly string[];
+    candidateSystemHashes: readonly string[];
+    systemHashStatus: ComparisonStatus;
+    baselineToolSchemaHashes: readonly string[];
+    candidateToolSchemaHashes: readonly string[];
+    toolSchemaHashStatus: ComparisonStatus;
+}
+export declare function compareRequestSurfaces(baseline: RunEvidence | undefined, candidate: RunEvidence | undefined, baselineFallback?: Pick<FrozenReplayCase, 'provider' | 'model' | 'systemHash' | 'toolSchemaHash'>): RequestSurfaceComparison;
 export declare function workspaceDriftNotice(drift: WorkspaceDriftProvenance | undefined): string | undefined;
 export declare function WorkspaceDriftNotice({ drift }: {
     drift?: WorkspaceDriftProvenance;

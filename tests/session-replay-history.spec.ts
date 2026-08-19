@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import {
-  compactIdentifier, formatCount, formatDuration, formatMetricDelta, formatMetricValue,
-  formatRequestPhase, formatSurface, metricDeltaChange, replayHistoryForTurn,
-  WorkspaceDriftNotice, workspaceDriftNotice,
+  compactIdentifier, compareRequestSurfaces, formatCount, formatDuration, formatMetricDelta,
+  formatMetricPercentDelta, formatMetricValue, formatRequestPhase, formatSurface,
+  metricDeltaChange, metricDeltaTone, replayHistoryForTurn, WorkspaceDriftNotice,
+  workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
-import type { ReplayHistoryEntry } from '../src/types.ts'
+import type { ReplayHistoryEntry, RequestSurfaceEvidence, RunEvidence } from '../src/types.ts'
 
 function entry(sessionId: string, turn: number, id: string, updatedAt: string): ReplayHistoryEntry {
   return {
@@ -24,6 +25,15 @@ function entry(sessionId: string, turn: number, id: string, updatedAt: string): 
   }
 }
 
+function evidence(sessionId: string, surfaces: readonly RequestSurfaceEvidence[]): RunEvidence {
+  return {
+    runId: `run-${sessionId}`, sessionId, variantId: sessionId, status: 'completed',
+    requestPhases: surfaces.map(surface => surface.phase), requestSurfaces: surfaces,
+    complete: true, eventCount: 10, evidenceHash: `hash-${sessionId}`,
+    metrics: { freshInputTokens: 1, outputTokens: 1, cacheReadTokens: 1, durationMs: 1, stepCount: 1, toolCalls: 1 },
+  }
+}
+
 describe('per-turn replay history', () => {
   it('formats dense replay evidence for people while preserving exact values elsewhere', () => {
     expect(formatCount(326696)).toBe('326,696')
@@ -32,13 +42,46 @@ describe('per-turn replay history', () => {
     expect(formatMetricValue('durationMs', 101602)).toBe('1 min 42 s')
     expect(formatMetricDelta('freshInputTokens', 88813)).toBe('+88,813')
     expect(formatMetricDelta('durationMs', -1500)).toBe('−1.5 s')
+    expect(formatMetricPercentDelta(200, -50)).toBe('−25%')
+    expect(formatMetricPercentDelta(0, 5)).toBeUndefined()
     expect(metricDeltaChange(1)).toBe('increase')
     expect(metricDeltaChange(-1)).toBe('decrease')
     expect(metricDeltaChange(0)).toBe('unchanged')
+    expect(metricDeltaTone('durationMs', 1)).toBe('increase')
+    expect(metricDeltaTone('stepCount', -3)).toBe('neutral')
+    expect(metricDeltaTone('toolCalls', 3)).toBe('neutral')
     expect(formatRequestPhase('dynamic-unlocks')).toBe('Dynamic unlocks')
     expect(formatSurface('preset:anchored-standard')).toBe('Anchored standard preset')
     expect(formatSurface('host-plane:provider+sandbox')).toBe('Provider + sandbox (host-level)')
     expect(compactIdentifier('replay-exp-c04721c-very-long-identifier-b2d')).toBe('replay-exp-c04721…fier-b2d')
+  })
+
+  it('builds a semantic request-surface diff from durable baseline and candidate headers', () => {
+    const baseline = evidence('baseline', [{
+      phase: 'request', provider: 'deepseek-official', model: 'deepseek-v4-flash',
+      systemHash: 'system-a', toolSchemaHash: 'tools-a', toolNames: ['bash', 'read'],
+    }])
+    const candidate = evidence('candidate', [{
+      phase: 'request', provider: 'openrouter', model: 'deepseek-v4-flash',
+      systemHash: 'system-a', toolSchemaHash: 'tools-b', toolNames: ['bash', 'write'],
+    }])
+
+    expect(compareRequestSurfaces(baseline, candidate)).toEqual({
+      baselineRoute: ['deepseek-official / deepseek-v4-flash'],
+      candidateRoute: ['openrouter / deepseek-v4-flash'],
+      routeStatus: 'mismatch',
+      baselinePhases: ['request'], candidatePhases: ['request'], phaseStatus: 'match',
+      toolDiffStatus: 'known',
+      toolsAdded: ['write'], toolsRemoved: ['read'],
+      baselineSystemHashes: ['system-a'], candidateSystemHashes: ['system-a'], systemHashStatus: 'match',
+      baselineToolSchemaHashes: ['tools-a'], candidateToolSchemaHashes: ['tools-b'], toolSchemaHashStatus: 'mismatch',
+    })
+    expect(compareRequestSurfaces(baseline, { ...candidate, requestSurfaces: [] }).routeStatus).toBe('unknown')
+    expect(compareRequestSurfaces(
+      { ...baseline, requestSurfaces: [] },
+      candidate,
+      { provider: 'openrouter', model: 'deepseek-v4-flash', systemHash: 'system-a', toolSchemaHash: 'tools-a' },
+    )).toMatchObject({ routeStatus: 'match', toolDiffStatus: 'unknown', toolsAdded: [], toolsRemoved: [] })
   })
 
   it('filters by source session and turn and orders newest first', () => {
