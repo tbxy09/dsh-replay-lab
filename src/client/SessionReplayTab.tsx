@@ -423,6 +423,50 @@ function SavedRuns({ history, variants, displayedId, onSelect }: {
   })}</div>
 }
 
+export function rawEvidenceDownloadName(replayCase: FrozenReplayCase, experiment: ReplayExperiment): string {
+  const experimentId = experiment.id.replace(/[^a-zA-Z0-9._-]+/g, '-')
+  return `replay-evidence-turn-${replayCase.sourceTurn}-${experimentId}.json`
+}
+
+export function rawEvidenceArtifact(
+  replayCase: FrozenReplayCase,
+  experiment: ReplayExperiment,
+  workspaceDrift?: WorkspaceDriftProvenance,
+): object {
+  return {
+    schemaVersion: 1,
+    source: {
+      caseId: replayCase.id,
+      sessionId: replayCase.sourceSessionId,
+      turn: replayCase.sourceTurn,
+      promptHash: replayCase.promptHash,
+      workspaceHash: replayCase.sourceWorkspaceHash,
+    },
+    experiment: {
+      id: experiment.id,
+      candidateVariantId: experiment.candidateVariantId,
+      status: experiment.status,
+      createdAt: experiment.createdAt,
+      updatedAt: experiment.updatedAt,
+      approvedAt: experiment.approvedAt,
+    },
+    baseline: experiment.baseline ?? replayCase.observedBaseline ?? null,
+    candidate: experiment.candidate ?? null,
+    scorecard: experiment.scorecard ?? null,
+    scorecardMissingReason: experiment.scorecardMissingReason ?? null,
+    workspaceDrift: workspaceDrift ?? null,
+  }
+}
+
+function rawEvidenceDownloadHref(
+  replayCase: FrozenReplayCase,
+  experiment: ReplayExperiment,
+  workspaceDrift?: WorkspaceDriftProvenance,
+): string {
+  const json = `${JSON.stringify(rawEvidenceArtifact(replayCase, experiment, workspaceDrift), null, 2)}\n`
+  return `data:application/json;charset=utf-8,${encodeURIComponent(json)}`
+}
+
 function CompletedResult({ replayCase, experiment, activeExperiment, variants, history, workspaceDrift, onPlan, onSelectHistory }: {
   replayCase: FrozenReplayCase
   experiment: ReplayExperiment
@@ -433,12 +477,25 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
   onPlan: (variantId: string) => void
   onSelectHistory: (experimentId: string) => void
 }): ReactNode {
+  const rawEvidenceFilename = rawEvidenceDownloadName(replayCase, experiment)
+  const rawEvidenceHref = rawEvidenceDownloadHref(replayCase, experiment, workspaceDrift)
   return <main className="rld-result" data-testid="session-replay-result">
     {workspaceDrift?.detected === true && <WorkspaceDriftNotice drift={workspaceDrift} />}
+    <details className="rld-result-disclosure rld-result-setup-disclosure">
+      <summary><strong>Run setup</strong><span>Observed turn · isolated candidate · explicit approval</span></summary>
+      <div className="rld-result-setup-grid">
+        <FrozenRequest replayCase={replayCase} />
+        <CandidateVariants variants={variants} selectedId={activeExperiment?.candidateVariantId} onSelect={onPlan} />
+      </div>
+    </details>
     <RequestSurfaceDiff baseline={experiment.baseline} candidate={experiment.candidate} baselineFallback={replayCase} />
     <ExecutionDelta scorecard={experiment.scorecard} missingReason={experiment.scorecardMissingReason} />
     <details className="rld-result-disclosure">
-      <summary><strong>Raw evidence</strong><span>Session IDs, events, request headers, and captured token totals</span></summary>
+      <summary><strong>Raw evidence</strong><span>Downloadable JSON · session IDs, event counts, request headers, and metrics</span></summary>
+      <div className="rld-result-download">
+        <span><small>Artifact filename</small><code title={rawEvidenceFilename}>{rawEvidenceFilename}</code></span>
+        <a href={rawEvidenceHref} download={rawEvidenceFilename}>Download JSON</a>
+      </div>
       <div className="rld-session-evidence-grid">
         <EvidenceSummary title={`Baseline · Turn ${replayCase.sourceTurn}`} evidence={experiment.baseline ?? replayCase.observedBaseline} />
         <EvidenceSummary title="Candidate replay" evidence={experiment.candidate} />
@@ -448,13 +505,6 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
       <summary><strong>Saved runs</strong><span>{history.length} retained for this turn</span></summary>
       <SavedRuns history={history} variants={variants} displayedId={experiment.id} onSelect={onSelectHistory} />
     </details>}
-    <details className="rld-result-disclosure">
-      <summary><strong>Run setup</strong><span>Observed turn, isolated candidate, explicit approval</span></summary>
-      <div className="rld-result-setup-grid">
-        <FrozenRequest replayCase={replayCase} />
-        <CandidateVariants variants={variants} selectedId={activeExperiment?.candidateVariantId} onSelect={onPlan} />
-      </div>
-    </details>
   </main>
 }
 

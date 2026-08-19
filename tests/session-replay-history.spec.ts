@@ -3,7 +3,8 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import {
   compactIdentifier, compareRequestSurfaces, formatCount, formatDuration, formatMetricDelta,
   formatMetricPercentDelta, formatMetricValue, formatRequestPhase, formatSurface,
-  metricDeltaChange, metricDeltaTone, replayHistoryForTurn, WorkspaceDriftNotice,
+  metricDeltaChange, metricDeltaTone, rawEvidenceArtifact, rawEvidenceDownloadName,
+  replayHistoryForTurn, WorkspaceDriftNotice,
   workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
 import type { ReplayHistoryEntry, RequestSurfaceEvidence, RunEvidence } from '../src/types.ts'
@@ -103,6 +104,30 @@ describe('per-turn replay history', () => {
       entry('fish', 1, 'newer', '2026-08-15T01:00:00.000Z'),
     ]
     expect(replayHistoryForTurn(history, 'fish', 1).map(item => item.experiment.id)).toEqual(['newer', 'older'])
+  })
+
+  it('builds a portable named artifact from the exact retained replay evidence', () => {
+    const retained = entry('fish', 2, 'minimal run', '2026-08-19T12:00:00.000Z')
+    retained.experiment.baseline = evidence('fish', [])
+    retained.experiment.candidate = evidence('candidate', [])
+    retained.experiment.scorecardMissingReason = 'Independent evidence unavailable'
+    const replayCase = retained.replayCase
+    if (replayCase === undefined) throw new Error('test fixture must include a replay case')
+
+    expect(rawEvidenceDownloadName(replayCase, retained.experiment))
+      .toBe('replay-evidence-turn-2-minimal-run.json')
+    expect(rawEvidenceArtifact(replayCase, retained.experiment, {
+      detected: false, frozenHash: 'frozen', currentHash: 'frozen',
+    })).toMatchObject({
+      schemaVersion: 1,
+      source: { caseId: 'case-minimal run', sessionId: 'fish', turn: 2 },
+      experiment: { id: 'minimal run', candidateVariantId: 'standard', status: 'completed' },
+      baseline: { sessionId: 'fish', eventCount: 10 },
+      candidate: { sessionId: 'candidate', eventCount: 10 },
+      scorecard: null,
+      scorecardMissingReason: 'Independent evidence unavailable',
+      workspaceDrift: { detected: false, frozenHash: 'frozen', currentHash: 'frozen' },
+    })
   })
 
   it('hides a legacy entry whose observed baseline belongs to another session', () => {

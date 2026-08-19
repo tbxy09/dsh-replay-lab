@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { type FrozenReplayCase, type ReplayHistoryEntry, type RunEvidence, type WorkspaceDriftProvenance } from '../types.ts';
+import { type FrozenReplayCase, type ReplayExperiment, type ReplayHistoryEntry, type RunEvidence, type WorkspaceDriftProvenance } from '../types.ts';
 import type { ReplayTabProps } from './slots.ts';
 declare const metricLabels: {
     readonly freshInputTokens: "Fresh input tokens";
@@ -43,5 +43,7 @@ export declare function WorkspaceDriftNotice({ drift }: {
     drift?: WorkspaceDriftProvenance;
 }): ReactNode;
 export declare function replayHistoryForTurn(history: readonly ReplayHistoryEntry[], sessionId: string, turn: number): readonly ReplayHistoryEntry[];
+export declare function rawEvidenceDownloadName(replayCase: FrozenReplayCase, experiment: ReplayExperiment): string;
+export declare function rawEvidenceArtifact(replayCase: FrozenReplayCase, experiment: ReplayExperiment, workspaceDrift?: WorkspaceDriftProvenance): object;
 export declare function SessionReplayTab({ useProjection, sessionId, controllerFor }: ReplayTabProps): ReactNode;
 export {};
