@@ -4,11 +4,25 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## Unreleased
 
+## 0.1.2 - 2026-08-19
+
+### Added
+
+- Completed replays now include an all-runs evidence visualization with directly
+  labeled bars and per-metric scaling.
+- Raw replay evidence can be downloaded as JSON for independent inspection.
+
 ### Changed
 
-- Scorecards and evidence summaries now use readable metric names, grouped
-  numbers, human-duration units, friendly request phases, and compact IDs while
-  retaining exact raw values in hover text.
+- Replay Lab now presents completed comparisons as a result-first workflow with
+  saved-run selection, compact run setup, semantic request-surface differences,
+  and execution deltas.
+- Scorecards and evidence summaries use readable metric names, grouped numbers,
+  human-duration units, friendly request phases, compact IDs, larger typography,
+  and highlighted baseline/candidate/delta values while retaining exact raw
+  values in hover text.
+- The README uses a sharply cropped evidence-summary snapshot that excludes the
+  surrounding inbox and sidebar.
 
 ## 0.1.1 - 2026-08-16
 

@@ -306,11 +306,16 @@ Replay Lab 无法通过一次 rerun 证明：
 ## 安装
 
 需要 DeepSeek Harness `0.1.0-rc.6`、Node.js 22.19+ 或 24+，以及 pnpm。
-`v0.1.0` 保持不可变。当前 GitHub 源码 release 为 `v0.1.1`；两个 release
-都没有发布到 npm。
+从 npm 安装固定版本 `v0.1.2`：
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.1
+dsh plugin --profile web add @tbxy09/dsh-replay-lab@0.1.2
+```
+
+也可以使用相同版本的不可变 GitHub 源码 tag：
+
+```sh
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
 ```
 
 安装后重启 Web profile：

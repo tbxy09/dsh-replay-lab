@@ -333,11 +333,16 @@ These phrases are trajectory descriptors, not ability measurements.
 ## Install
 
 Requires DeepSeek Harness `0.1.0-rc.6`, Node.js 22.19+ or 24+, and pnpm.
-`v0.1.0` remains immutable. The current GitHub source release is `v0.1.1`;
-neither release is published to npm.
+Install the pinned `v0.1.2` package from npm:
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.1
+dsh plugin --profile web add @tbxy09/dsh-replay-lab@0.1.2
+```
+
+The matching immutable GitHub source tag is also available:
+
+```sh
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
 ```
 
 Restart the Web profile after installation:
