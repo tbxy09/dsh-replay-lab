@@ -13,6 +13,7 @@ export declare function formatCount(value: number): string;
 export declare function formatDuration(milliseconds: number): string;
 export declare function formatMetricValue(key: keyof typeof metricLabels, value: number): string;
 export declare function formatMetricDelta(key: keyof typeof metricLabels, value: number): string;
+export declare function metricDeltaChange(value: number): 'increase' | 'decrease' | 'unchanged';
 export declare function formatRequestPhase(phase: string): string;
 export declare function formatSurface(surface: string): string;
 export declare function compactIdentifier(value: string): string;

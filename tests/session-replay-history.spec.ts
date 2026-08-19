@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import {
   compactIdentifier, formatCount, formatDuration, formatMetricDelta, formatMetricValue,
-  formatRequestPhase, formatSurface, replayHistoryForTurn, WorkspaceDriftNotice, workspaceDriftNotice,
+  formatRequestPhase, formatSurface, metricDeltaChange, replayHistoryForTurn,
+  WorkspaceDriftNotice, workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
 import type { ReplayHistoryEntry } from '../src/types.ts'
 
@@ -31,6 +32,9 @@ describe('per-turn replay history', () => {
     expect(formatMetricValue('durationMs', 101602)).toBe('1 min 42 s')
     expect(formatMetricDelta('freshInputTokens', 88813)).toBe('+88,813')
     expect(formatMetricDelta('durationMs', -1500)).toBe('−1.5 s')
+    expect(metricDeltaChange(1)).toBe('increase')
+    expect(metricDeltaChange(-1)).toBe('decrease')
+    expect(metricDeltaChange(0)).toBe('unchanged')
     expect(formatRequestPhase('dynamic-unlocks')).toBe('Dynamic unlocks')
     expect(formatSurface('preset:anchored-standard')).toBe('Anchored standard preset')
     expect(formatSurface('host-plane:provider+sandbox')).toBe('Provider + sandbox (host-level)')

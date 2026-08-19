@@ -41,6 +41,10 @@ export function formatMetricDelta(key: keyof typeof metricLabels, value: number)
   return `${sign}${formatMetricValue(key, Math.abs(value))}`
 }
 
+export function metricDeltaChange(value: number): 'increase' | 'decrease' | 'unchanged' {
+  return value > 0 ? 'increase' : value < 0 ? 'decrease' : 'unchanged'
+}
+
 export function formatRequestPhase(phase: string): string {
   const labels: Record<string, string> = {
     observed: 'Observed baseline', request: 'Request', bootstrap: 'Bootstrap',
@@ -127,7 +131,9 @@ function ScorecardTable({ scorecard, missingReason, workspaceDrift }: {
             <th title={row.label}>{metricLabels[row.key]}</th>
             <td title={String(row.baseline)}>{formatMetricValue(row.key, row.baseline)}</td>
             <td title={String(row.candidate)}>{formatMetricValue(row.key, row.candidate)}</td>
-            <td title={String(row.delta)}>{formatMetricDelta(row.key, row.delta)}</td>
+            <td data-change={metricDeltaChange(row.delta)} title={String(row.delta)}>
+              {formatMetricDelta(row.key, row.delta)}
+            </td>
           </tr>)}</tbody>
         </table>}
     </section>
