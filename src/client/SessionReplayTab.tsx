@@ -246,6 +246,14 @@ function EvidenceValidityStrip({ baseline, candidate, scorecard, workspaceDrift,
   </section>
 }
 
+function ReplayWorkflowGuide(): ReactNode {
+  return <ol className="rld-replay-guide" aria-label="Replay workflow">
+    <li><span>1</span><strong>Run setup</strong></li>
+    <li><span>2</span><strong>Saved runs</strong></li>
+    <li><span>3</span><strong>Inspect evidence</strong></li>
+  </ol>
+}
+
 function TextSequence({ values, format = value => value }: {
   values: readonly string[]
   format?: (value: string) => string
@@ -479,10 +487,14 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
 }): ReactNode {
   const rawEvidenceFilename = rawEvidenceDownloadName(replayCase, experiment)
   const rawEvidenceHref = rawEvidenceDownloadHref(replayCase, experiment, workspaceDrift)
+  const viewedVariant = variants.find(variant => variant.id === experiment.candidateVariantId)
   return <main className="rld-result" data-testid="session-replay-result">
     {workspaceDrift?.detected === true && <WorkspaceDriftNotice drift={workspaceDrift} />}
     {history.length > 0 && <details className="rld-result-disclosure rld-result-saved-disclosure">
-      <summary><strong>Saved runs</strong><span>{history.length} retained for this turn</span></summary>
+      <summary>
+        <strong>Saved runs · {viewedVariant?.label ?? experiment.candidateVariantId}</strong>
+        <span data-status={experiment.status}>{statusLabel[experiment.status]} · {history.length} retained</span>
+      </summary>
       <SavedRuns history={history} variants={variants} displayedId={experiment.id} onSelect={onSelectHistory} />
     </details>}
     <details className="rld-result-disclosure rld-result-setup-disclosure">
@@ -534,12 +546,13 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
       <header className="rld-session-workbench-header" data-result={completedResult || undefined}>
         <button type="button" onClick={onBack}>← Choose another turn</button>
         <div>
-          <h2>{completedResult ? `Turn ${replayCase.sourceTurn} comparison` : `Current session · Turn ${replayCase.sourceTurn}`}</h2>
-          <p>{completedResult
-            ? 'This observed baseline is fixed. One isolated candidate was executed and recorded.'
-            : 'This observed baseline is fixed. Choose one isolated candidate, then explicitly approve its run.'}</p>
+          <h2>{completedResult ? `Replay · Turn ${replayCase.sourceTurn}` : `Current session · Turn ${replayCase.sourceTurn}`}</h2>
+          {completedResult
+            ? <ReplayWorkflowGuide />
+            : <p>This observed baseline is fixed. Choose one isolated candidate, then explicitly approve its run.</p>}
         </div>
-        {displayedExperiment !== undefined && <strong data-status={displayedExperiment.status}>{statusLabel[displayedExperiment.status]}</strong>}
+        {displayedExperiment !== undefined && (!completedResult || history.length === 0)
+          && <strong data-status={displayedExperiment.status}>{statusLabel[displayedExperiment.status]}</strong>}
         {completedResult && displayedExperiment !== undefined && <EvidenceValidityStrip
           baseline={displayedExperiment.baseline}
           candidate={displayedExperiment.candidate}
