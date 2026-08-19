@@ -214,25 +214,16 @@ function comparisonLabel(status: ComparisonStatus): string {
   return status === 'match' ? 'Match' : status === 'mismatch' ? 'Changed' : 'Unknown'
 }
 
-function EvidenceValidityStrip({ baseline, candidate, scorecard, workspaceDrift, baselineFallback }: {
+function EvidenceValidityStrip({ baseline, candidate, workspaceDrift, baselineFallback }: {
   baseline?: RunEvidence
   candidate?: RunEvidence
-  scorecard?: Scorecard
   workspaceDrift?: WorkspaceDriftProvenance
   baselineFallback?: Pick<FrozenReplayCase, 'provider' | 'model' | 'systemHash' | 'toolSchemaHash'>
 }): ReactNode {
   const comparison = compareRequestSurfaces(baseline, candidate, baselineFallback)
-  const complete = baseline?.complete === true && candidate?.complete === true
-  const independent = scorecard !== undefined
-  const evidenceTone = independent ? 'good' : complete ? 'warning' : 'unknown'
   const routeTone = comparison.routeStatus === 'match' ? 'good' : comparison.routeStatus === 'mismatch' ? 'warning' : 'unknown'
   const workspaceTone = workspaceDrift === undefined ? 'unknown' : workspaceDrift.detected ? 'warning' : 'good'
   return <section className="rld-result-validity" aria-label="Evidence validity">
-    <div data-tone={evidenceTone}>
-      <span className="rld-result-validity-icon" aria-hidden="true">{independent ? '✓' : complete ? '!' : '?'}</span>
-      <span><strong>Independent evidence · {independent ? 'Complete' : complete ? 'Not independent' : 'Incomplete'}</strong>
-        <small>{independent ? 'Distinct durable sessions and evidence hashes.' : 'Numeric comparison is unavailable.'}</small></span>
-    </div>
     <div data-tone={routeTone}>
       <span className="rld-result-validity-icon" aria-hidden="true">{comparison.routeStatus === 'match' ? '↔' : comparison.routeStatus === 'mismatch' ? '!' : '?'}</span>
       <span><strong>Route · {comparison.routeStatus === 'match' ? 'Match' : comparison.routeStatus === 'mismatch' ? 'Mismatch' : 'Unknown'}</strong>
@@ -556,7 +547,6 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
         {completedResult && displayedExperiment !== undefined && <EvidenceValidityStrip
           baseline={displayedExperiment.baseline}
           candidate={displayedExperiment.candidate}
-          scorecard={displayedExperiment.scorecard}
           workspaceDrift={displayedDrift}
           baselineFallback={replayCase}
         />}
