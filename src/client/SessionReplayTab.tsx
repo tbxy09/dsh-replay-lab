@@ -481,6 +481,10 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
   const rawEvidenceHref = rawEvidenceDownloadHref(replayCase, experiment, workspaceDrift)
   return <main className="rld-result" data-testid="session-replay-result">
     {workspaceDrift?.detected === true && <WorkspaceDriftNotice drift={workspaceDrift} />}
+    {history.length > 0 && <details className="rld-result-disclosure rld-result-saved-disclosure">
+      <summary><strong>Saved runs</strong><span>{history.length} retained for this turn</span></summary>
+      <SavedRuns history={history} variants={variants} displayedId={experiment.id} onSelect={onSelectHistory} />
+    </details>}
     <details className="rld-result-disclosure rld-result-setup-disclosure">
       <summary><strong>Run setup</strong><span>Observed turn · isolated candidate · explicit approval</span></summary>
       <div className="rld-result-setup-grid">
@@ -501,10 +505,6 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
         <EvidenceSummary title="Candidate replay" evidence={experiment.candidate} />
       </div>
     </details>
-    {history.length > 0 && <details className="rld-result-disclosure">
-      <summary><strong>Saved runs</strong><span>{history.length} retained for this turn</span></summary>
-      <SavedRuns history={history} variants={variants} displayedId={experiment.id} onSelect={onSelectHistory} />
-    </details>}
   </main>
 }
 
