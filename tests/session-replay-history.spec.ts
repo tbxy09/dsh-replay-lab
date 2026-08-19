@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import {
-  replayHistoryForTurn, WorkspaceDriftNotice, workspaceDriftNotice,
+  allRunEvidenceColumns, compactIdentifier, compareRequestSurfaces, formatCount, formatDuration, formatMetricDelta,
+  formatMetricPercentDelta, formatMetricValue, formatRequestPhase, formatSurface,
+  metricBarPercent, metricDeltaChange, metricDeltaTone, rawEvidenceArtifact, rawEvidenceDownloadName,
+  replayHistoryForTurn, WorkspaceDriftNotice,
+  workspaceDriftNotice,
 } from '../src/client/SessionReplayTab.tsx'
-import type { ReplayHistoryEntry } from '../src/types.ts'
+import type { ReplayHistoryEntry, RequestSurfaceEvidence, RunEvidence } from '../src/types.ts'
 
 function entry(sessionId: string, turn: number, id: string, updatedAt: string): ReplayHistoryEntry {
   return {
@@ -22,7 +26,76 @@ function entry(sessionId: string, turn: number, id: string, updatedAt: string): 
   }
 }
 
+function evidence(sessionId: string, surfaces: readonly RequestSurfaceEvidence[]): RunEvidence {
+  return {
+    runId: `run-${sessionId}`, sessionId, variantId: sessionId, status: 'completed',
+    requestPhases: surfaces.map(surface => surface.phase), requestSurfaces: surfaces,
+    complete: true, eventCount: 10, evidenceHash: `hash-${sessionId}`,
+    metrics: { freshInputTokens: 1, outputTokens: 1, cacheReadTokens: 1, durationMs: 1, stepCount: 1, toolCalls: 1 },
+  }
+}
+
 describe('per-turn replay history', () => {
+  it('formats dense replay evidence for people while preserving exact values elsewhere', () => {
+    expect(formatCount(326696)).toBe('326,696')
+    expect(formatDuration(458288)).toBe('7 min 38 s')
+    expect(formatDuration(850)).toBe('850 ms')
+    expect(formatMetricValue('durationMs', 101602)).toBe('1 min 42 s')
+    expect(formatMetricDelta('freshInputTokens', 88813)).toBe('+88,813')
+    expect(formatMetricDelta('durationMs', -1500)).toBe('−1.5 s')
+    expect(formatMetricPercentDelta(200, -50)).toBe('−25%')
+    expect(formatMetricPercentDelta(0, 5)).toBeUndefined()
+    expect(metricDeltaChange(1)).toBe('increase')
+    expect(metricDeltaChange(-1)).toBe('decrease')
+    expect(metricDeltaChange(0)).toBe('unchanged')
+    expect(metricDeltaTone('durationMs', 1)).toBe('increase')
+    expect(metricDeltaTone('stepCount', -3)).toBe('neutral')
+    expect(metricDeltaTone('toolCalls', 3)).toBe('neutral')
+    expect(formatRequestPhase('dynamic-unlocks')).toBe('Dynamic unlocks')
+    expect(formatSurface('preset:anchored-standard')).toBe('Anchored standard preset')
+    expect(formatSurface('host-plane:provider+sandbox')).toBe('Provider + sandbox (host-level)')
+    expect(compactIdentifier('replay-exp-c04721c-very-long-identifier-b2d')).toBe('replay-exp-c04721…fier-b2d')
+  })
+
+  it('builds a semantic request-surface diff from durable baseline and candidate headers', () => {
+    const baseline = evidence('baseline', [{
+      phase: 'request', provider: 'deepseek-official', model: 'deepseek-v4-flash',
+      systemHash: 'system-a', toolSchemaHash: 'tools-a', toolNames: ['bash', 'read'],
+    }])
+    const candidate = evidence('candidate', [{
+      phase: 'request', provider: 'openrouter', model: 'deepseek-v4-flash',
+      systemHash: 'system-a', toolSchemaHash: 'tools-b', toolNames: ['bash', 'write'],
+    }])
+
+    expect(compareRequestSurfaces(baseline, candidate)).toEqual({
+      baselineRoute: ['deepseek-official / deepseek-v4-flash'],
+      candidateRoute: ['openrouter / deepseek-v4-flash'],
+      routeStatus: 'mismatch',
+      baselinePhases: ['request'], candidatePhases: ['request'], phaseStatus: 'match',
+      toolDiffStatus: 'known',
+      toolsAdded: ['write'], toolsRemoved: ['read'],
+      baselineSystemHashes: ['system-a'], candidateSystemHashes: ['system-a'], systemHashStatus: 'match',
+      baselineToolSchemaHashes: ['tools-a'], candidateToolSchemaHashes: ['tools-b'], toolSchemaHashStatus: 'mismatch',
+    })
+    expect(compareRequestSurfaces(baseline, { ...candidate, requestSurfaces: [] }).routeStatus).toBe('unknown')
+    expect(compareRequestSurfaces(
+      { ...baseline, requestSurfaces: [] },
+      candidate,
+      { provider: 'openrouter', model: 'deepseek-v4-flash', systemHash: 'system-a', toolSchemaHash: 'tools-a' },
+    )).toMatchObject({ routeStatus: 'match', toolDiffStatus: 'unknown', toolsAdded: [], toolsRemoved: [] })
+    const repeatedBaselineSurface = baseline.requestSurfaces?.[0]
+    expect(compareRequestSurfaces(
+      baseline,
+      repeatedBaselineSurface === undefined ? undefined : evidence('repeated', [repeatedBaselineSurface, repeatedBaselineSurface]),
+    )).toMatchObject({
+      candidateRoute: ['deepseek-official / deepseek-v4-flash'],
+      candidatePhases: ['request'],
+      candidateSystemHashes: ['system-a'],
+      candidateToolSchemaHashes: ['tools-a'],
+      routeStatus: 'match', phaseStatus: 'match',
+    })
+  })
+
   it('filters by source session and turn and orders newest first', () => {
     const history = [
       entry('fish', 1, 'older', '2026-08-15T00:00:00.000Z'),
@@ -31,6 +104,52 @@ describe('per-turn replay history', () => {
       entry('fish', 1, 'newer', '2026-08-15T01:00:00.000Z'),
     ]
     expect(replayHistoryForTurn(history, 'fish', 1).map(item => item.experiment.id)).toEqual(['newer', 'older'])
+  })
+
+  it('builds an all-runs evidence view with one observed baseline and every retained candidate', () => {
+    const newer = entry('fish', 1, 'newer', '2026-08-15T01:00:00.000Z')
+    const older = entry('fish', 1, 'older', '2026-08-15T00:00:00.000Z')
+    newer.experiment.baseline = evidence('fish', [])
+    newer.experiment.candidate = evidence('candidate-newer', [])
+    older.experiment.candidate = evidence('candidate-older', [])
+    const replayCase = newer.replayCase
+    if (replayCase === undefined) throw new Error('test fixture must include a replay case')
+
+    expect(allRunEvidenceColumns(replayCase, newer.experiment, [newer, older], [{
+      id: 'standard', label: 'Standard reply', description: '', plane: 'agent',
+      pluginSurface: 'preset:standard', supported: true, requestPhases: ['request'],
+    }])).toMatchObject([
+      { label: 'Observed baseline', detail: 'Turn 1', kind: 'baseline', metrics: { outputTokens: 1 } },
+      { id: 'newer', label: 'Standard reply', kind: 'candidate', metrics: { outputTokens: 1 } },
+      { id: 'older', label: 'Standard reply', kind: 'candidate', metrics: { outputTokens: 1 } },
+    ])
+    expect(metricBarPercent(25, 100)).toBe(25)
+    expect(metricBarPercent(1, 100)).toBe(2)
+    expect(metricBarPercent(0, 100)).toBe(0)
+  })
+
+  it('builds a portable named artifact from the exact retained replay evidence', () => {
+    const retained = entry('fish', 2, 'minimal run', '2026-08-19T12:00:00.000Z')
+    retained.experiment.baseline = evidence('fish', [])
+    retained.experiment.candidate = evidence('candidate', [])
+    retained.experiment.scorecardMissingReason = 'Independent evidence unavailable'
+    const replayCase = retained.replayCase
+    if (replayCase === undefined) throw new Error('test fixture must include a replay case')
+
+    expect(rawEvidenceDownloadName(replayCase, retained.experiment))
+      .toBe('replay-evidence-turn-2-minimal-run.json')
+    expect(rawEvidenceArtifact(replayCase, retained.experiment, {
+      detected: false, frozenHash: 'frozen', currentHash: 'frozen',
+    })).toMatchObject({
+      schemaVersion: 1,
+      source: { caseId: 'case-minimal run', sessionId: 'fish', turn: 2 },
+      experiment: { id: 'minimal run', candidateVariantId: 'standard', status: 'completed' },
+      baseline: { sessionId: 'fish', eventCount: 10 },
+      candidate: { sessionId: 'candidate', eventCount: 10 },
+      scorecard: null,
+      scorecardMissingReason: 'Independent evidence unavailable',
+      workspaceDrift: { detected: false, frozenHash: 'frozen', currentHash: 'frozen' },
+    })
   })
 
   it('hides a legacy entry whose observed baseline belongs to another session', () => {

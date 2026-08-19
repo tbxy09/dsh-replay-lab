@@ -1,6 +1,6 @@
 English | [简体中文](./README.zh-CN.md)
 
-![Replay Lab run detail showing Anchored Standard, request phases, tool surfaces, and the complete scorecard](./assets/replay-run-detail.png)
+![Replay Lab evidence summary comparing the observed baseline with every saved replay run using directly labeled bars](./assets/replay-run-detail.png)
 
 # DSH Replay Lab (ReplayLab)
 
@@ -314,9 +314,11 @@ Completed DSH turn
 
 ## Replay evidence
 
-The run-detail screenshot above shows the complete baseline/candidate/delta
-scorecard. The following screenshots show language signals where they occur in
-the session chat's thinking rows, not as recreated count labels.
+The run-detail screenshot above compares the observed baseline with every saved
+replay run. Each metric has its own scale and keeps the exact recorded value
+visible; steps and tool calls describe activity, not outcome quality. The
+following screenshots show language signals where they occur in the session
+chat's thinking rows, not as recreated count labels.
 
 ![Anchored Standard session chat with actual Let's and We occurrences boxed in thinking rows](./assets/replay-thinking-anchored.png)
 
@@ -331,11 +333,16 @@ These phrases are trajectory descriptors, not ability measurements.
 ## Install
 
 Requires DeepSeek Harness `0.1.0-rc.6`, Node.js 22.19+ or 24+, and pnpm.
-`v0.1.0` remains immutable. The current GitHub source release is `v0.1.1`;
-neither release is published to npm.
+Install the pinned `v0.1.2` package from npm:
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.1
+dsh plugin --profile web add @tbxy09/dsh-replay-lab@0.1.2
+```
+
+The matching immutable GitHub source tag is also available:
+
+```sh
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
 ```
 
 Restart the Web profile after installation:

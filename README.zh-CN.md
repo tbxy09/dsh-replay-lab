@@ -1,6 +1,6 @@
 [English](./README.md) | 简体中文
 
-![Replay Lab 运行详情：展示 Anchored Standard、请求阶段、工具面和完整评分卡](./assets/replay-run-detail.png)
+![Replay Lab 证据摘要：使用带精确数值标签的条形图比较观察基线与所有已保存回放运行](./assets/replay-run-detail.png)
 
 # DSH Replay Lab（ReplayLab）
 
@@ -289,8 +289,9 @@ Replay Lab 无法通过一次 rerun 证明：
 
 ## Replay 证据
 
-顶部的运行详情截图展示了完整的 baseline/candidate/delta 评分卡。下面的截图展示
-语言信号在 session chat 的 thinking 行中实际出现的位置，而不是重新生成的计数标签。
+顶部的运行详情截图比较观察基线与每个已保存的回放运行。每项指标独立缩放，并保留
+精确记录值；步骤数和工具调用数描述执行活动，不代表结果质量。下面的截图展示语言
+信号在 session chat 的 thinking 行中实际出现的位置，而不是重新生成的计数标签。
 
 ![Anchored Standard session chat：thinking 行中真实的 Let's 和 We 已被框出](./assets/replay-thinking-anchored.png)
 
@@ -305,11 +306,16 @@ Replay Lab 无法通过一次 rerun 证明：
 ## 安装
 
 需要 DeepSeek Harness `0.1.0-rc.6`、Node.js 22.19+ 或 24+，以及 pnpm。
-`v0.1.0` 保持不可变。当前 GitHub 源码 release 为 `v0.1.1`；两个 release
-都没有发布到 npm。
+从 npm 安装固定版本 `v0.1.2`：
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.1
+dsh plugin --profile web add @tbxy09/dsh-replay-lab@0.1.2
+```
+
+也可以使用相同版本的不可变 GitHub 源码 tag：
+
+```sh
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
 ```
 
 安装后重启 Web profile：
