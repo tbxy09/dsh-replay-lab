@@ -4,6 +4,15 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## Unreleased
 
+## 0.1.3 - 2026-08-19
+
+### Changed
+
+- The public npm package, DSH bundle identity, fixture paths, and client style
+  namespace now use the `@webwalkerhq/dsh-replay-lab` organization scope.
+- `v0.1.2` remains an immutable source release under the earlier personal-scope
+  package identity; `v0.1.3` is the first npm registry release.
+
 ## 0.1.2 - 2026-08-19
 
 ### Added

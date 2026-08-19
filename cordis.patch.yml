@@ -1,10 +1,10 @@
 - insert:
     - id: replay-lab-dsh
-      name: '@tbxy09/dsh-replay-lab'
+      name: '@webwalkerhq/dsh-replay-lab'
       config:
         routeBase: /replay-lab-dsh
-        historyFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/history-turns.json
-        workspaceFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/workspace
+        historyFixture: ./node_modules/@webwalkerhq/dsh-replay-lab/fixtures/history-turns.json
+        workspaceFixture: ./node_modules/@webwalkerhq/dsh-replay-lab/fixtures/workspace
         stateFile: ./.tmp/state.json
         artifactDirectory: ./.tmp/artifacts
         provider: replay-lab-fake

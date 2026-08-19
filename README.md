@@ -333,16 +333,16 @@ These phrases are trajectory descriptors, not ability measurements.
 ## Install
 
 Requires DeepSeek Harness `0.1.0-rc.6`, Node.js 22.19+ or 24+, and pnpm.
-Install the pinned `v0.1.2` package from npm:
+Install the pinned `v0.1.3` organization package from npm:
 
 ```sh
-dsh plugin --profile web add @tbxy09/dsh-replay-lab@0.1.2
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.3
 ```
 
 The matching immutable GitHub source tag is also available:
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.2
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.3
 ```
 
 Restart the Web profile after installation:
@@ -351,7 +351,7 @@ Restart the Web profile after installation:
 dsh web
 ```
 
-The bundle mounts `@tbxy09/dsh-replay-lab` at `/replay-lab-dsh` and injects
+The bundle mounts `@webwalkerhq/dsh-replay-lab` at `/replay-lab-dsh` and injects
 its client module into the Web profile.
 
 ### Enable Anchored Standard
@@ -380,11 +380,11 @@ The installed bundle includes this baseline:
 ```yaml
 - insert:
     - id: replay-lab-dsh
-      name: '@tbxy09/dsh-replay-lab'
+      name: '@webwalkerhq/dsh-replay-lab'
       config:
         routeBase: /replay-lab-dsh
-        historyFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/history-turns.json
-        workspaceFixture: ./node_modules/@tbxy09/dsh-replay-lab/fixtures/workspace
+        historyFixture: ./node_modules/@webwalkerhq/dsh-replay-lab/fixtures/history-turns.json
+        workspaceFixture: ./node_modules/@webwalkerhq/dsh-replay-lab/fixtures/workspace
         stateFile: ./.tmp/state.json
         artifactDirectory: ./.tmp/artifacts
         provider: replay-lab-fake
