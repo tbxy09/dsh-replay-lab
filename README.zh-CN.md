@@ -1,6 +1,10 @@
 [English](./README.md) | 简体中文
 
-![Replay Lab 证据摘要：使用带精确数值标签的条形图比较观察基线与所有已保存回放运行](./assets/replay-run-detail.png)
+![完整 Replay Lab 结果：展示 workspace provenance、全部运行指标、请求面与执行差异、显式证据总结器和可下载原始证据](./assets/replay-run-detail.png)
+
+*完整 Replay 结果区。**Summarize raw evidence** 是一次显式触发的直接
+model-runtime 调用，不会启动 Agent。生成的 narrative 和 cited evidence IDs 会随
+持久 run evidence 一起保留；它不是跨 Agent 或跨 session 共享的长期 memory。*
 
 # DSH Replay Lab（ReplayLab）
 
@@ -25,7 +29,8 @@ session 事件与对比证据。
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
-## 为什么需要 Replay Lab
+<details>
+<summary><h2>为什么需要 Replay Lab</h2></summary>
 
 ### 问：最初观察到的问题是什么？
 
@@ -274,6 +279,8 @@ Replay Lab 无法通过一次 rerun 证明：
 
 目标不是把一个 workaround 变成普遍理论，而是让 Model × Harness 比较变得更窄、
 可重复、具备 provenance，并诚实说明现有证据究竟能够证明什么。
+
+</details>
 
 ## 功能
 

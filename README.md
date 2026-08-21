@@ -1,6 +1,11 @@
 English | [简体中文](./README.zh-CN.md)
 
-![Replay Lab evidence summary comparing the observed baseline with every saved replay run using directly labeled bars](./assets/replay-run-detail.png)
+![Complete Replay Lab result showing workspace provenance, all-run metrics, request-surface and execution deltas, the explicit evidence summarizer, and downloadable raw evidence](./assets/replay-run-detail.png)
+
+*Complete Replay result. **Summarize raw evidence** is an explicit, one-shot
+direct model-runtime call—no agent is started. Its generated narrative and
+cited evidence IDs are retained with the durable run evidence; this is not
+shared agent or cross-session memory.*
 
 # DSH Replay Lab (ReplayLab)
 
@@ -29,7 +34,8 @@ while durable session events and comparison evidence remain available.
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
-## Why Replay Lab exists
+<details>
+<summary><h2>Why Replay Lab exists</h2></summary>
 
 ### Q: What was the original problem?
 
@@ -303,6 +309,8 @@ The goal is not to turn one workaround into a universal theory. The goal is to
 make Model × Harness comparisons narrower, repeatable, provenance-aware, and
 honest about what the available evidence can establish.
 
+
+</details>
 
 ## What it does
 
