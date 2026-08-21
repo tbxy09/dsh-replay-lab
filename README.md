@@ -1,11 +1,11 @@
 English | [简体中文](./README.zh-CN.md)
 
-![Complete Replay Lab result showing workspace provenance, all-run metrics, request-surface and execution deltas, the explicit evidence summarizer, and downloadable raw evidence](./assets/replay-run-detail.png)
+![Generated Replay Lab evidence summary with retained cited facts and downloadable raw evidence](./assets/replay-run-detail.png)
 
-*Complete Replay result. **Summarize raw evidence** is an explicit, one-shot
-direct model-runtime call—no agent is started. Its generated narrative and
-cited evidence IDs are retained with the durable run evidence; this is not
-shared agent or cross-session memory.*
+*Generated evidence summary from a completed Replay. It was produced by an
+explicit, one-shot direct model-runtime call—no agent was started. The
+narrative and cited evidence IDs are retained with the durable run evidence;
+this is not shared agent or cross-session memory.*
 
 # DSH Replay Lab (ReplayLab)
 

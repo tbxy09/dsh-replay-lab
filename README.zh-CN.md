@@ -1,9 +1,9 @@
 [English](./README.md) | 简体中文
 
-![完整 Replay Lab 结果：展示 workspace provenance、全部运行指标、请求面与执行差异、显式证据总结器和可下载原始证据](./assets/replay-run-detail.png)
+![Replay Lab 已生成的证据总结：展示持久引用事实和可下载原始证据](./assets/replay-run-detail.png)
 
-*完整 Replay 结果区。**Summarize raw evidence** 是一次显式触发的直接
-model-runtime 调用，不会启动 Agent。生成的 narrative 和 cited evidence IDs 会随
+*这是一条已完成 Replay 所生成的证据总结。它来自一次显式触发的直接
+model-runtime 调用，未启动 Agent。生成的 narrative 和 cited evidence IDs 会随
 持久 run evidence 一起保留；它不是跨 Agent 或跨 session 共享的长期 memory。*
 
 # DSH Replay Lab（ReplayLab）
