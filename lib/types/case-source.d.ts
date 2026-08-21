@@ -1,5 +1,5 @@
 import type { CaseSource } from './registries.ts';
-import type { FrozenReplayCase, HistoryTurnSource, ReplayableTurnRecord } from './types.ts';
+import type { FrozenReplayCase, HistoryTurnSource, ReplayableTurnRecord, ReplayWorkspaceCheckpoint } from './types.ts';
 export declare function buildCase(source: {
     id: string;
     sessionId: string;
@@ -14,7 +14,7 @@ export declare function buildCase(source: {
     toolSchemaHash: string;
 }, sourceCwd: string, sourceWorkspaceHash: string): FrozenReplayCase;
 /** Freeze a host-resolved authoritative session projection record. */
-export declare function freezeReplayTurn(sessionId: string, record: ReplayableTurnRecord, sourceCwd: string): Promise<FrozenReplayCase>;
+export declare function freezeReplayTurn(sessionId: string, record: ReplayableTurnRecord, sourceCwd: string, checkpoint?: ReplayWorkspaceCheckpoint): Promise<FrozenReplayCase>;
 export declare class FixtureCaseSource implements CaseSource {
     private readonly file;
     private readonly workspaceFixture;

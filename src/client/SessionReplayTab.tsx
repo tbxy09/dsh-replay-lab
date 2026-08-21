@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import {
   replayTurnKey, replayTurnTestId, type FrozenReplayCase, type ReplayExperiment,
   type ReplayHistoryEntry, type ReplayableTurnRecord, type RequestSurfaceEvidence,
-  type RunEvidence, type RunMetrics, type Scorecard, type VariantDescriptor, type WorkspaceDriftProvenance,
+  type RouteLineageEvidence, type RunEvidence, type RunMetrics, type Scorecard, type VariantDescriptor,
+  type WorkspaceDriftProvenance,
 } from '../types.ts'
 import type { ReplayTabProps } from './slots.ts'
 
@@ -83,6 +84,44 @@ export function formatSurface(surface: string): string {
 
 export function compactIdentifier(value: string): string {
   return value.length <= 28 ? value : `${value.slice(0, 17)}…${value.slice(-8)}`
+}
+
+export function routeMismatchLabel(value: boolean | null): 'Route mismatch' | 'Route match' | 'Unknown' {
+  return value === true ? 'Route mismatch' : value === false ? 'Route match' : 'Unknown'
+}
+
+function routeLabel(route: RouteLineageEvidence['expectedParentRoute']): string {
+  return route === null ? 'Unavailable' : `${route.provider} / ${route.model}`
+}
+
+function routeEvidenceFor(
+  experiment: ReplayExperiment,
+  evidence: readonly RouteLineageEvidence[],
+): readonly RouteLineageEvidence[] {
+  const candidateId = experiment.candidate?.sessionId
+  const baselineId = experiment.baseline?.sessionId
+  const exact = evidence.filter(item => item.childSessionId === candidateId && item.parentSessionId === baselineId)
+  return exact.length > 0 ? exact : evidence.filter(item => item.childSessionId === candidateId)
+}
+
+function RouteLineagePanel({ evidence }: { evidence: readonly RouteLineageEvidence[] }): ReactNode {
+  if (evidence.length === 0) return <p className="rld-session-muted">No durable parent/child route decision is attached to this run.</p>
+  return <section className="rld-route-lineage" aria-label="Parent child route evidence">
+    <header><h4>Parent / child route evidence</h4><span>Durable request headers only</span></header>
+    {evidence.map(item => <article key={`${item.parentSessionId}:${item.childSessionId}`} data-mismatch={String(item.routeMismatch)}>
+      <div className="rld-route-lineage-title">
+        <strong>{routeMismatchLabel(item.routeMismatch)}</strong>
+        <code title={`${item.parentSessionId} → ${item.childSessionId}`}>{compactIdentifier(item.parentSessionId)} → {compactIdentifier(item.childSessionId)}</code>
+      </div>
+      <dl>
+        <div><dt>Expected parent route</dt><dd>{routeLabel(item.expectedParentRoute)}</dd></div>
+        <div><dt>Actual child route</dt><dd>{routeLabel(item.actualChildRoute)}</dd></div>
+        <div><dt>Lineage source</dt><dd><code>{item.provenance.lineage}</code></dd></div>
+        <div><dt>Route source</dt><dd><code>durable request/header</code></dd></div>
+      </dl>
+      {item.routeMismatch === null && <p className="rld-session-warning" role="status">Cannot decide: {item.missingReason ?? 'durable route evidence is incomplete'}</p>}
+    </article>)}
+  </section>
 }
 
 type ComparisonStatus = 'match' | 'mismatch' | 'unknown'
@@ -180,6 +219,9 @@ function EvidenceSummary({ title, evidence }: { title: string; evidence?: RunEvi
               <dd title={surface.toolNames.join(', ')}>{surface.toolNames.join(', ') || 'No tools'}</dd>
             </div>)}
             <div><dt>Events</dt><dd title={String(evidence.eventCount)}>{formatCount(evidence.eventCount)}</dd></div>
+            <div><dt>Evidence hash</dt><dd title={evidence.evidenceHash}>{evidence.evidenceHash === undefined ? 'Unavailable' : compactIdentifier(evidence.evidenceHash)}</dd></div>
+            {evidence.workspace?.checkpoint !== undefined && <div><dt>Checkpoint</dt><dd title={evidence.workspace.checkpoint.checkpointHash}>{compactIdentifier(evidence.workspace.checkpoint.checkpointHash)}</dd></div>}
+            {evidence.workspace?.rollback !== undefined && <div><dt>Replay files</dt><dd>{evidence.workspace.rollback.status === 'restored' ? 'Restored to checkpoint' : evidence.workspace.rollback.status}</dd></div>}
           </dl>
           {evidence.metrics === undefined
             ? <p className="rld-session-warning" role="status">Evidence unavailable: {evidence.missingReason ?? 'incomplete event stream'}</p>
@@ -195,7 +237,7 @@ function EvidenceSummary({ title, evidence }: { title: string; evidence?: RunEvi
 
 export function workspaceDriftNotice(drift: WorkspaceDriftProvenance | undefined): string | undefined {
   return drift?.detected === true
-    ? 'Workspace changed after this replay case was frozen. The candidate used the current workspace state, so this is not a strict controlled comparison.'
+    ? 'Source workspace continued past the pre-turn S0 checkpoint. The candidate replayed from that snapshot; the source was not reverted.'
     : undefined
 }
 
@@ -508,6 +550,8 @@ export function rawEvidenceArtifact(
     candidate: experiment.candidate ?? null,
     scorecard: experiment.scorecard ?? null,
     scorecardMissingReason: experiment.scorecardMissingReason ?? null,
+    callEvidenceComparison: experiment.callEvidenceComparison ?? null,
+    evidenceNarrative: experiment.evidenceNarrative ?? null,
     workspaceDrift: workspaceDrift ?? null,
   }
 }
@@ -521,14 +565,38 @@ function rawEvidenceDownloadHref(
   return `data:application/json;charset=utf-8,${encodeURIComponent(json)}`
 }
 
-function CompletedResult({ replayCase, experiment, activeExperiment, variants, history, workspaceDrift, onPlan, onSelectHistory }: {
+function EvidenceNarrativePanel({ experiment, summarizing, onSummarize }: {
+  experiment: ReplayExperiment
+  summarizing: boolean
+  onSummarize: () => void
+}): ReactNode {
+  const narrative = experiment.evidenceNarrative
+  const heading = narrative?.status === 'completed' ? 'Evidence summary' : 'Summarize raw evidence'
+  return <section className="rld-result-section rld-evidence-narrative" aria-labelledby="rld-evidence-narrative-heading">
+    <header><h3 id="rld-evidence-narrative-heading">{heading}</h3><span>One direct model-runtime call · no agent</span></header>
+    <div className="rld-disclosure-body">
+      {narrative?.text === undefined
+        ? <p className="rld-result-empty">{narrative?.error ?? 'Raw calls and deterministic facts are ready to summarize.'}</p>
+        : <blockquote>{narrative.text}</blockquote>}
+      {narrative !== undefined && narrative.citedEvidenceIds.length > 0 && <p className="rld-behavior-note">Cited facts: {narrative.citedEvidenceIds.join(', ')}</p>}
+      <button type="button" disabled={summarizing || experiment.callEvidenceComparison === undefined} onClick={onSummarize}>
+        {summarizing ? 'Summarizing…' : narrative?.status === 'completed' ? 'Regenerate summary' : 'Summarize raw evidence'}
+      </button>
+    </div>
+  </section>
+}
+
+function CompletedResult({ replayCase, experiment, activeExperiment, variants, history, routeLineage, workspaceDrift, summarizing, onPlan, onSummarize, onSelectHistory }: {
   replayCase: FrozenReplayCase
   experiment: ReplayExperiment
   activeExperiment?: ReplayExperiment
   variants: readonly VariantDescriptor[]
   history: readonly ReplayHistoryEntry[]
+  routeLineage: readonly RouteLineageEvidence[]
   workspaceDrift?: WorkspaceDriftProvenance
+  summarizing: boolean
   onPlan: (variantId: string) => void
+  onSummarize: () => void
   onSelectHistory: (experimentId: string) => void
 }): ReactNode {
   const rawEvidenceFilename = rawEvidenceDownloadName(replayCase, experiment)
@@ -553,6 +621,7 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
     </details>
     <RequestSurfaceDiff baseline={experiment.baseline} candidate={experiment.candidate} baselineFallback={replayCase} />
     <ExecutionDelta scorecard={experiment.scorecard} missingReason={experiment.scorecardMissingReason} />
+    <EvidenceNarrativePanel experiment={experiment} summarizing={summarizing} onSummarize={onSummarize} />
     <details className="rld-result-disclosure">
       <summary><strong>Raw evidence</strong><span>Downloadable JSON · session IDs, event counts, request headers, and metrics</span></summary>
       <div className="rld-result-download">
@@ -563,6 +632,7 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
         <EvidenceSummary title={`Baseline · Turn ${replayCase.sourceTurn}`} evidence={experiment.baseline ?? replayCase.observedBaseline} />
         <EvidenceSummary title="Candidate replay" evidence={experiment.candidate} />
       </div>
+      <RouteLineagePanel evidence={routeEvidenceFor(experiment, routeLineage)} />
     </details>
   </main>
 }
@@ -610,8 +680,11 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
           activeExperiment={experiment}
           variants={variants}
           history={history}
+          routeLineage={snapshot?.routeLineage ?? []}
           workspaceDrift={displayedDrift}
+          summarizing={state.status === 'loading'}
           onPlan={variantId => { void controller.plan(variantId) }}
+          onSummarize={() => { void controller.summarize(displayedExperiment.id) }}
           onSelectHistory={setViewingId}
         />
         : <>

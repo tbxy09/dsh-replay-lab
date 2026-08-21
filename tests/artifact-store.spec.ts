@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { JsonArtifactStore } from '../src/artifact-store.ts'
+import { matchRouteLineage } from '../src/route-lineage.ts'
 import type { FrozenReplayCase, ReplayExperiment } from '../src/types.ts'
 
 const replayCase = {
@@ -22,6 +23,30 @@ const experiment = {
 } satisfies ReplayExperiment
 
 describe('JsonArtifactStore replay history', () => {
+  it('restores only valid durable route-lineage artifacts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'rld-store-lineage-'))
+    const artifacts = join(directory, 'artifacts')
+    try {
+      const store = new JsonArtifactStore(join(directory, 'state.json'), artifacts)
+      const evidence = matchRouteLineage(
+        {
+          sessionId: 'parent', header: { id: 'parent', createdAt: 1 },
+          events: [{ type: 'request/header', seq: 0, time: 10, data: { header: { config: { provider: 'deepseek', model: 'new' } } } }],
+        },
+        {
+          sessionId: 'child', header: { id: 'child', createdAt: 20, parentSession: 'parent', origin: 'subagent' },
+          events: [{ type: 'request/header', seq: 0, time: 21, data: { header: { config: { provider: 'deepseek', model: 'old' } } } }],
+        },
+      )
+      expect(evidence).toBeDefined()
+      await store.put('route-lineage', 'valid', evidence)
+      await store.put('route-lineage', 'invalid', { schemaVersion: 'route-lineage/v1', routeMismatch: false })
+      expect(await store.loadRouteLineageEvidence()).toEqual([evidence])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('migrates a terminal v1 result and writes durable v2 history', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'rld-store-'))
     const file = join(directory, 'state.json')
@@ -43,6 +68,7 @@ describe('JsonArtifactStore replay history', () => {
     const directory = await mkdtemp(join(tmpdir(), 'rld-store-drift-'))
     const file = join(directory, 'state.json')
     const drift = { detected: true, frozenHash: 'a'.repeat(64), currentHash: 'b'.repeat(64) }
+    const checkpointHash = drift.currentHash
     const driftExperiment: ReplayExperiment = {
       ...experiment,
       candidate: {
@@ -52,6 +78,14 @@ describe('JsonArtifactStore replay history', () => {
           sourceCwd: '/workspace', sourceHash: drift.currentHash,
           executionCwd: '/artifacts/candidate/workspace', executionHash: drift.currentHash,
           isolation: 'copy', policy: 'test', drift,
+          checkpoint: {
+            schemaVersion: 'replay-workspace-checkpoint/v1',
+            checkpointCwd: '/artifacts/candidate/.replay-checkpoint', checkpointHash,
+            sourceHash: drift.currentHash, createdAt: '2026-08-15T00:00:30.000Z',
+          },
+          rollback: {
+            status: 'restored', restoredHash: checkpointHash, completedAt: '2026-08-15T00:01:00.000Z',
+          },
         },
       },
       scorecard: {
@@ -65,6 +99,8 @@ describe('JsonArtifactStore replay history', () => {
       }] })
       const loaded = await store.load()
       expect(loaded.history[0]?.experiment.candidate?.workspace?.drift).toEqual(drift)
+      expect(loaded.history[0]?.experiment.candidate?.workspace?.checkpoint).toMatchObject({ checkpointHash, sourceHash: drift.currentHash })
+      expect(loaded.history[0]?.experiment.candidate?.workspace?.rollback).toMatchObject({ status: 'restored', restoredHash: checkpointHash })
       expect(loaded.history[0]?.experiment.scorecard?.workspaceDrift).toEqual(drift)
     } finally {
       await rm(directory, { recursive: true, force: true })

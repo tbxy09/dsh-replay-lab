@@ -21,6 +21,8 @@ export interface Runner extends Identified {
         experimentId: string;
         variant: VariantDescriptor;
     }): Promise<RunEvidence>;
+    /** Best-effort cancellation for an active candidate; terminal cleanup remains runner-owned. */
+    abort?(experimentId: string): Promise<RunEvidence | undefined>;
 }
 export interface MetricsExtractor extends Identified {
     extract(events: readonly unknown[]): RunMetrics | undefined;

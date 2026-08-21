@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { ArtifactStore } from './registries.ts'
 import type { FrozenReplayCase, ReplayExperiment, ReplayHistoryEntry } from './types.ts'
+import { isRouteLineageEvidence } from './route-lineage.ts'
+import type { RouteLineageEvidence } from './types.ts'
 
 interface PersistedStateV1 { version: 1; replayCase?: FrozenReplayCase; experiment?: ReplayExperiment }
 interface PersistedStateV2 {
@@ -61,6 +64,26 @@ export class JsonArtifactStore implements ArtifactStore {
     return entries.filter((entry): entry is ReplayHistoryEntry => entry !== undefined)
   }
 
+  async loadRouteLineageEvidence(): Promise<RouteLineageEvidence[]> {
+    let names: string[]
+    try {
+      names = await readdir(resolve(this.artifactDirectory))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+    const values = await Promise.all(names
+      .filter(name => name.startsWith('route-lineage-') && name.endsWith('.json'))
+      .map(async name => {
+        try {
+          return JSON.parse(await readFile(join(resolve(this.artifactDirectory), name), 'utf8')) as unknown
+        } catch {
+          return undefined
+        }
+      }))
+    return values.filter(isRouteLineageEvidence)
+  }
+
   async load(): Promise<{ replayCase?: FrozenReplayCase; experiment?: ReplayExperiment; history: readonly ReplayHistoryEntry[] }> {
     const artifacts = await this.artifactHistory()
     try {
@@ -102,7 +125,9 @@ export class JsonArtifactStore implements ArtifactStore {
     const directory = resolve(this.artifactDirectory)
     await mkdir(directory, { recursive: true })
     const target = join(directory, `${kind}-${id}.json`)
-    await writeFile(target, JSON.stringify(value, null, 2), 'utf8')
+    const temp = `${target}.${randomUUID()}.tmp`
+    await writeFile(temp, JSON.stringify(value, null, 2), 'utf8')
+    await rename(temp, target)
     return target
   }
 }

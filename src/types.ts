@@ -44,6 +44,10 @@ export interface ReplayableTurnRecord {
   presetSurface: string | null
   systemHash: string | null
   toolSchemaHash: string | null
+  /** Durable observed request surface; omitted only by older/custom projections. */
+  requestSurface?: RequestSurfaceEvidence
+  /** Durable per-model-call/tool-call evidence for this finalized turn. */
+  callEvidence?: RawCallEvidence
   evidenceHash: string | null
   missingFields: readonly string[]
   replayable: boolean
@@ -87,6 +91,8 @@ export interface FrozenReplayCase {
   sourceCwd: string
   /** Hash of the durable source cwd at case-freeze time. */
   sourceWorkspaceHash: string
+  /** Pre-turn S0 snapshot. Candidate materialization must use this, never post-baseline HEAD. */
+  sourceCheckpoint?: ReplayWorkspaceCheckpoint
   provider: string
   model: string
   reasoning: string
@@ -121,6 +127,102 @@ export interface RunMetrics {
   toolCalls: number
 }
 
+/** One tool invocation and its durable model-facing result, retained without an agent summary. */
+export interface ToolCallEvidence {
+  evidenceId: string
+  callId: string
+  name: string
+  calledAt: number
+  /** Exact JSON string emitted by the model. Treat as untrusted data. */
+  arguments: string
+  normalizedCallHash: string
+  retryOf?: string
+  result?: {
+    completedAt: number
+    durationMs: number
+    status: 'success' | 'error'
+    errorCode?: string
+    /** Exact JSON-serializable, model-facing result blocks. Treat as untrusted data. */
+    content: unknown
+    contentHash: string
+  }
+  /** Deterministic structural progress, never an LLM judgment. */
+  effective: boolean
+}
+
+/** One native agent step: one model call plus the tool executions it requested. */
+export interface ModelCallEvidence {
+  evidenceId: string
+  turn: number
+  step: number
+  startedAt: number
+  finishedAt?: number
+  firstOutputAt?: number
+  assistantContent?: unknown
+  toolCalls: readonly ToolCallEvidence[]
+  /** True when at least one tool result is a new successful observation/action. */
+  effective: boolean
+}
+
+/** Versioned call-level evidence projected from the durable session log. */
+export interface RawCallEvidence {
+  schemaVersion: 'raw-call-evidence/v1'
+  turn: number
+  startedAt: number
+  endedAt: number
+  calls: readonly ModelCallEvidence[]
+  metrics: {
+    toolCallCount: number
+    toolRetryCount: number
+    toolRetryRatePercent: number
+    maxProgresslessSpan: number
+    firstEffectiveActionLatencyMs: number | null
+  }
+}
+
+export type EvidenceFactMetric =
+  | 'toolCallCount'
+  | 'toolRetryCount'
+  | 'toolRetryRatePercent'
+  | 'maxProgresslessSpan'
+  | 'firstEffectiveActionLatencyMs'
+
+/** Deterministically computed comparison supplied beside raw calls to the summary model. */
+export interface EvidenceFact {
+  evidenceId: string
+  metric: EvidenceFactMetric
+  unit: 'count' | 'percent' | 'milliseconds'
+  baseline: number
+  candidate: number
+  delta: number
+  relativeDeltaPercent: number | null
+}
+
+export interface CallEvidenceComparison {
+  schemaVersion: 'call-evidence-comparison/v1'
+  fixtureId: string
+  baselineEvidenceHash: string
+  candidateEvidenceHash: string
+  definitions: {
+    retry: 'a tool call after the first call with the same normalized name and arguments'
+    effective: 'a successful tool result whose normalized call and result pair has not already occurred'
+    progresslessSpan: 'consecutive model calls with no effective tool result'
+  }
+  facts: readonly EvidenceFact[]
+}
+
+/** Output of one direct model-runtime call; no agent session is created. */
+export interface EvidenceNarrative {
+  schemaVersion: 'evidence-narrative/v1'
+  status: 'completed' | 'failed' | 'unavailable'
+  promptVersion: 'raw-evidence-summary/v1'
+  provider: string
+  model: string
+  text?: string
+  citedEvidenceIds: readonly string[]
+  error?: string
+}
+
 /** One distinct provider-bound request surface recovered from durable request/header events. */
 export interface RequestSurfaceEvidence {
   phase: string
@@ -133,6 +235,43 @@ export interface RequestSurfaceEvidence {
   toolNames: readonly string[]
 }
 
+/** Sanitized provider route recovered only from a durable request/header event. */
+export interface DurableRouteIdentity {
+  provider: string
+  model: string
+  reasoning?: string
+  maxTokens?: number
+}
+
+/**
+ * Cross-session semantic evidence. This is intentionally separate from the
+ * numeric scorecard: a zero token delta cannot make a route mismatch disappear.
+ */
+export interface RouteLineageEvidence {
+  schemaVersion: 'route-lineage/v1'
+  parentSessionId: string
+  childSessionId: string
+  expectedParentRoute: DurableRouteIdentity | null
+  actualChildRoute: DurableRouteIdentity | null
+  /** null means that the durable evidence is insufficient to decide. */
+  routeMismatch: boolean | null
+  routeSource: {
+    expectedParentRoute: 'parent-latest-request-header-at-or-before-child-createdAt'
+    actualChildRoute: 'child-first-owned-request-header'
+  }
+  provenance: {
+    lineage: 'session.header.parentSession+origin'
+    expectedParentRoute: 'durable-request/header'
+    actualChildRoute: 'durable-request/header'
+    childCreatedAt: number | null
+    childSeedLength: number
+    parentRequestSeq: number | null
+    childRequestSeq: number | null
+    evidenceHash: string
+  }
+  missingReason?: string
+}
+
 export interface RunEvidence {
   runId: string
   sessionId: string
@@ -141,6 +280,7 @@ export interface RunEvidence {
   requestPhases: readonly string[]
   requestSurfaces?: readonly RequestSurfaceEvidence[]
   metrics?: RunMetrics
+  callEvidence?: RawCallEvidence
   complete: boolean
   missingReason?: string
   eventCount: number
@@ -161,10 +301,57 @@ export interface WorkspaceProvenance {
   sourceHash: string
   executionCwd: string
   executionHash: string
-  isolation: 'observed-source' | 'copy'
+  isolation: 'observed-source' | 'copy' | 'git-worktree'
   policy: string
+  /** Explicit immutable replay checkpoint, created before the candidate session starts. */
+  checkpoint?: WorkspaceCheckpointProvenance
+  /** Terminal disposition of candidate file mutations. */
+  rollback?: WorkspaceRollbackProvenance
   /** Omitted only when reading legacy/custom workspace evidence. */
   drift?: WorkspaceDriftProvenance
+}
+
+export type ReplayWorkspaceKind = 'git-commit' | 'files'
+export type ReplayCheckpointCapture = 'turn-start' | 'admit' | 'freeze' | 'materialize'
+
+export interface ReplayWorkspaceGitIdentity {
+  gitRoot: string
+  commit: string
+  tree: string
+  sourceRelative: string
+  ref: string
+}
+
+/** Durable S0 identity. Git objects stay in the source repo; file snapshots are disjoint copies. */
+export interface ReplayWorkspaceCheckpoint {
+  schemaVersion: 'replay-workspace-checkpoint/v1'
+  kind: ReplayWorkspaceKind
+  sourceCwd: string
+  checkpointHash: string
+  sourceHash: string
+  createdAt: string
+  capturedAt: ReplayCheckpointCapture
+  checkpointCwd?: string
+  git?: ReplayWorkspaceGitIdentity
+}
+
+export interface WorkspaceCheckpointProvenance {
+  schemaVersion: 'replay-workspace-checkpoint/v1'
+  checkpointHash: string
+  sourceHash: string
+  createdAt: string
+  kind?: ReplayWorkspaceKind
+  capturedAt?: ReplayCheckpointCapture
+  checkpointCwd?: string
+  git?: ReplayWorkspaceGitIdentity
+}
+
+export interface WorkspaceRollbackProvenance {
+  status: 'pending' | 'restored' | 'failed'
+  /** Hash of the restored execution cwd; present after successful rollback. */
+  restoredHash?: string
+  completedAt?: string
+  error?: string
 }
 
 export interface ScorecardRow {
@@ -196,6 +383,8 @@ export interface ReplayExperiment {
   candidate?: RunEvidence
   scorecard?: Scorecard
   scorecardMissingReason?: string
+  callEvidenceComparison?: CallEvidenceComparison
+  evidenceNarrative?: EvidenceNarrative
   error?: string
 }
 
@@ -215,6 +404,8 @@ export interface LabSnapshot {
   variants: readonly VariantDescriptor[]
   /** Completed, failed, or aborted runs retained for the per-session Replay tab. */
   history: readonly ReplayHistoryEntry[]
+  /** Semantic request evidence; omitted by older/custom hosts. */
+  routeLineage?: readonly RouteLineageEvidence[]
   replayCase?: FrozenReplayCase
   experiment?: ReplayExperiment
 }

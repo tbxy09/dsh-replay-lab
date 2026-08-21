@@ -1,8 +1,17 @@
 English | [简体中文](./README.zh-CN.md)
 
-![Replay Lab evidence summary comparing the observed baseline with every saved replay run using directly labeled bars](./assets/replay-run-detail.png)
+![Complete Replay Lab result showing workspace provenance, all-run metrics, request-surface and execution deltas, the explicit evidence summarizer, and downloadable raw evidence](./assets/replay-run-detail.png)
+
+*Complete Replay result. **Summarize raw evidence** is an explicit, one-shot
+direct model-runtime call—no agent is started. Its generated narrative and
+cited evidence IDs are retained with the durable run evidence; this is not
+shared agent or cross-session memory.*
 
 # DSH Replay Lab (ReplayLab)
+
+**DSH Replay Lab is a DeepSeek Harness plugin for request-surface replay and A/B
+experiments: freeze a turn, isolate the candidate session, and compare request
+surfaces, trajectories, and cost.**
 
 **Replay the request surface, not just the prompt.**
 
@@ -15,7 +24,9 @@ loops, no-progress turns, and preset- or plugin-dependent regressions.
 
 Freeze a completed DeepSeek Harness turn, approve one isolated candidate, and
 compare outcome, trajectory, errors, cost, and the request surface that produced
-them.
+them. The source session and workspace are never rewritten or reverted.
+Candidate file mutations are restored to the replay checkpoint after the run,
+while durable session events and comparison evidence remain available.
 
 [Install](#install) · [Verify](#verify) · [Security](./SECURITY.md) ·
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -23,7 +34,8 @@ them.
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
-## Why Replay Lab exists
+<details>
+<summary><h2>Why Replay Lab exists</h2></summary>
 
 ### Q: What was the original problem?
 
@@ -194,10 +206,12 @@ For one approved experiment, it:
 ```text
 selects one completed DSH turn
   → freezes its replay case and provenance
+  → uses its captured turn-start workspace checkpoint when available
   → selects one preset or agent-scoped plugin candidate
   → requires explicit approval
   → creates one isolated candidate session
   → reruns the completed turn's prompt in an isolated workspace copy
+  → restores candidate files to their checkpoint at the terminal boundary
   → records effective candidate request evidence and execution metrics
   → compares the candidate with the observed baseline
 ```
@@ -215,10 +229,14 @@ identity, prompt and prompt hash, provider, model, reasoning setting,
 `maxTokens`, observed preset label, system and tool-schema fingerprints,
 baseline evidence, source workspace path, and freeze-time workspace hash.
 
-At candidate-run time, Replay Lab copies the current source workspace into an
-isolated location. If its current hash differs from the freeze-time hash, Replay
-Lab records **workspace drift** and marks the result as not being a strict
-controlled comparison.
+For live turns observed by the plugin, Replay Lab attempts to capture the
+workspace at `turn/start`, including dirty and untracked files. Git sources use
+an internal commit/tree and detached worktree; non-Git sources use a disjoint
+file snapshot without running `git init`. The candidate is materialized from
+that checkpoint. If no historical turn-start checkpoint is available, the
+current implementation falls back to an isolated checkpoint of the current
+source state and records its capture provenance; that run is a post-turn-state
+rerun, not a strict S0 replay.
 
 This wording matters: Replay Lab freezes the case and provenance, then records
 and compares observed request-surface evidence. It does not claim to freeze the
@@ -233,7 +251,9 @@ available tools.
 The candidate runs in a validated workspace copy rather than rewriting the
 source session or working directly in the source workspace. Path-containment
 guards keep structured candidate and subagent file operations inside that
-copy.
+copy. Success, failure, and abort preserve durable session evidence but restore
+candidate files to the checkpoint. The source workspace is never a rollback or
+cleanup target.
 
 Several experiments can be retained for the same source turn, but each approval
 authorizes one candidate run.
@@ -290,6 +310,8 @@ make Model × Harness comparisons narrower, repeatable, provenance-aware, and
 honest about what the available evidence can establish.
 
 
+</details>
+
 ## What it does
 
 ```text
@@ -297,7 +319,7 @@ Completed DSH turn
   → freeze recorded request surface + workspace fixture
   → choose Standard / Minimal / Anchored / plugin candidate
   → explicit human approval
-  → one isolated candidate session
+  → checkpoint → one isolated candidate session → restore candidate files
   → compare outcome, steps, tool calls, tokens, errors, and surface diff
 ```
 
@@ -305,10 +327,16 @@ Completed DSH turn
 - Builds rows from durable session projections rather than paginated chat nodes.
 - Freezes prompt, workspace hash, model, reasoning, max tokens, preset/plugin
   surface, system hash, and tool-schema hash.
-- Keeps the observed source turn fixed; only the candidate executes.
-- Runs candidates in validated workspace copies with path-containment guards.
-- If the source workspace changed after freezing, runs from an isolated copy of
-  the current state and records both hashes as workspace-drift provenance.
+- Captures live turn-start workspace state when the host event arrives, then
+  keeps the observed source turn fixed; only the candidate executes.
+- Runs candidates in validated workspace copies with path-containment guards;
+  the source session and workspace are never rewritten or reverted.
+- Restores candidate files at terminal boundaries while retaining durable
+  events, checkpoint hashes, provenance, and comparison evidence.
+- Recovers checkpointed durable candidate workspaces after restart and refuses
+  cleanup when source/candidate boundaries are not disjoint.
+- Falls back to a provenance-marked isolated current-state checkpoint when a
+  historical turn-start checkpoint is unavailable; this is not strict S0 replay.
 - Produces a scorecard only from independently recorded evidence.
 - Rejects unsupported host-plane changes and incomplete variants.
 

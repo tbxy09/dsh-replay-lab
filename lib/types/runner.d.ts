@@ -2,18 +2,10 @@ import type { Context } from '@deepseek-ai/cordis';
 import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { MetricsExtractor, Runner, VariantContributor } from './registries.ts';
-import type { FrozenReplayCase, RequestSurfaceEvidence, RunEvidence, VariantDescriptor, WorkspaceProvenance } from './types.ts';
-export interface IsolatedWorkspace {
-    root: string;
-    durable: boolean;
-    provenance: WorkspaceProvenance;
-}
-export interface WorkspaceSnapshotOptions {
-    /** Persistent parent used by approved candidate sessions so sidebar membership survives restart. */
-    parentDirectory?: string;
-    /** Human-derived leaf name; only filesystem-safe characters are retained. */
-    executionName?: string;
-}
+import { copyWorkspaceSnapshot, discardWorkspaceSnapshot, materializeWorkspaceCheckpoint, recoverManagedWorkspaceSnapshots, rollbackWorkspaceSnapshot } from './replay-workspace.ts';
+import type { FrozenReplayCase, RequestSurfaceEvidence, RunEvidence, VariantDescriptor } from './types.ts';
+export type { IsolatedWorkspace, WorkspaceSnapshotOptions } from './replay-workspace.ts';
+export { copyWorkspaceSnapshot, discardWorkspaceSnapshot, materializeWorkspaceCheckpoint, recoverManagedWorkspaceSnapshots, rollbackWorkspaceSnapshot, };
 /** Monotonic guard for structured file arguments used by replay agents and descendants. */
 export declare function candidatePathGuard(argumentsValue: unknown, executionCwd: string): string | undefined;
 /** Recover every distinct, durable provider-bound request surface in log order. */
@@ -23,8 +15,6 @@ export declare function replayDisplayNames(replayCase: Pick<FrozenReplayCase, 's
     sessionTitle: string;
     executionName: string;
 };
-/** Copy the current source workspace and retain its comparison with the frozen case hash. */
-export declare function copyWorkspaceSnapshot(sourceCwd: string, expectedHash: string, options?: WorkspaceSnapshotOptions): Promise<IsolatedWorkspace>;
 export declare class DeterministicReplayAdapter extends LlmAdapter {
     providerInfo(provider: string): {
         id: string;
@@ -64,11 +54,17 @@ export declare class CordisAgentRunner implements Runner {
     readonly id = "cordis-agent-runner";
     private readonly handles;
     private readonly isolatedRoots;
+    private readonly activeCandidates;
     constructor(ctx: Context, metrics: MetricsExtractor, variantLookup: (id: string) => VariantContributor | undefined, managedWorkspaceDirectory?: string | undefined);
+    recoverManagedWorkspaces(): Promise<number>;
+    /** Candidate and descendant tool access is writable only during the owned replay run. */
+    isActiveCandidateSession(sessionId: string): boolean;
     run(input: {
         replayCase: FrozenReplayCase;
         experimentId: string;
         variant: VariantDescriptor;
     }): Promise<RunEvidence>;
+    private runCandidate;
+    abort(experimentId: string): Promise<RunEvidence | undefined>;
     dispose(): Promise<void>;
 }

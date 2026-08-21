@@ -1,8 +1,14 @@
 [English](./README.md) | 简体中文
 
-![Replay Lab 证据摘要：使用带精确数值标签的条形图比较观察基线与所有已保存回放运行](./assets/replay-run-detail.png)
+![完整 Replay Lab 结果：展示 workspace provenance、全部运行指标、请求面与执行差异、显式证据总结器和可下载原始证据](./assets/replay-run-detail.png)
+
+*完整 Replay 结果区。**Summarize raw evidence** 是一次显式触发的直接
+model-runtime 调用，不会启动 Agent。生成的 narrative 和 cited evidence IDs 会随
+持久 run evidence 一起保留；它不是跨 Agent 或跨 session 共享的长期 memory。*
 
 # DSH Replay Lab（ReplayLab）
+
+**DSH Replay Lab - DeepSeek Harness 请求面重放与 A/B 实验插件：冻结 turn、隔离候选 session、对比 Request Surface/轨迹/成本**
 
 **回放请求面，而不只是提示词。**
 
@@ -13,7 +19,9 @@ plugin 重新运行已完成的 Agent turn，并比较它们的请求面、轨�
 或 plugin 差异引发的回归。
 
 冻结一个已完成的 DeepSeek Harness turn，明确批准一个隔离候选项，然后比较结果、
-轨迹、错误、成本，以及产生这些行为的请求面。
+轨迹、错误、成本，以及产生这些行为的请求面。源 session 和源 workspace 永远不会
+被重写或回滚；候选文件变更会在运行后恢复到 replay checkpoint，同时保留持久
+session 事件与对比证据。
 
 [安装](#安装) · [验证](#验证) · [安全](./SECURITY.md) ·
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -21,7 +29,8 @@ plugin 重新运行已完成的 Agent turn，并比较它们的请求面、轨�
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
-## 为什么需要 Replay Lab
+<details>
+<summary><h2>为什么需要 Replay Lab</h2></summary>
 
 ### 问：最初观察到的问题是什么？
 
@@ -180,10 +189,12 @@ baseline；Replay Lab 不会再次执行 baseline。
 ```text
 选择一个已完成的 DSH turn
   → 冻结 replay case 和 provenance
+  → 若存在，则使用 turn 开始时捕获的 workspace checkpoint
   → 选择一个 preset 或 Agent-scoped plugin 候选项
   → 要求明确批准
   → 创建一个隔离的候选 session
   → 在隔离 workspace 副本中重新执行该 turn 的 prompt
+  → 在终态边界把候选文件恢复到 checkpoint
   → 记录候选项实际生效的请求证据和执行指标
   → 将候选项与已观测 baseline 进行比较
 ```
@@ -199,9 +210,12 @@ prompt 及其 hash、provider、model、reasoning 设置、`maxTokens`、已观�
 标签、system 和 tool-schema 指纹、baseline 证据、源 workspace 路径，以及冻结时的
 workspace hash。
 
-运行候选项时，Replay Lab 会把源 workspace 的当前状态复制到隔离位置。如果当前
-hash 与冻结时的 hash 不同，Replay Lab 会记录 **workspace drift**，并标明该结果
-不是严格的受控比较。
+对于插件实时观察到的 turn，Replay Lab 会尝试在 `turn/start` 捕获 workspace，
+包括 dirty 和 untracked 文件。Git 源使用内部 commit/tree 和 detached worktree；
+非 Git 源使用彼此分离的文件快照，不会自动执行 `git init`。候选项从该 checkpoint
+物化。如果历史 turn-start checkpoint 不可用，当前实现会退回为源 workspace 当前
+状态创建隔离 checkpoint，并记录 capture provenance；这种运行属于 post-turn-state
+rerun，而不是严格的 S0 replay。
 
 这个措辞很重要：Replay Lab 冻结的是 case 和 provenance，随后记录并比较已观测的
 请求面证据。它不会声称把完整的旧 Request Surface 冻结成一个可重复使用的 payload。
@@ -213,7 +227,8 @@ hash 与冻结时的 hash 不同，Replay Lab 会记录 **workspace drift**，�
 
 候选项在经过验证的 workspace 副本中运行，而不会重写源 session，也不会直接在
 源 workspace 中执行。路径包含性保护会把候选项和 subagent 的结构化文件操作限制
-在该副本内。
+在该副本内。成功、失败或 abort 都会保留持久 session 证据，并把候选文件恢复到
+checkpoint。源 workspace 永远不会成为 rollback 或 cleanup 目标。
 
 同一个源 turn 可以保留多个实验，但每次批准只授权一次候选运行。
 
@@ -265,6 +280,8 @@ Replay Lab 无法通过一次 rerun 证明：
 目标不是把一个 workaround 变成普遍理论，而是让 Model × Harness 比较变得更窄、
 可重复、具备 provenance，并诚实说明现有证据究竟能够证明什么。
 
+</details>
+
 ## 功能
 
 ```text
@@ -272,7 +289,7 @@ Replay Lab 无法通过一次 rerun 证明：
   → 冻结已记录的请求面和 workspace fixture
   → 选择 Standard / Minimal / Anchored / plugin 候选项
   → 人工明确批准
-  → 运行一个隔离的候选 session
+  → checkpoint → 运行一个隔离的候选 session → 恢复候选文件
   → 比较结果、steps、工具调用、tokens、错误和请求面差异
 ```
 
@@ -280,10 +297,14 @@ Replay Lab 无法通过一次 rerun 证明：
 - 使用持久化 session projection 构建行，而不是依赖分页聊天节点。
 - 冻结 prompt、workspace hash、model、reasoning、max tokens、preset/plugin 请求面、
   system hash 和 tool-schema hash。
-- 保持已观测的源 turn 不变；只有候选项会执行。
-- 在经过验证的 workspace 副本中运行候选项，并使用路径包含性保护。
-- 如果源 workspace 在冻结后发生变化，则从当前状态的隔离副本运行，同时记录两个
-  hash 作为 workspace-drift provenance。
+- host event 到达时捕获实时 turn-start workspace 状态；保持已观测的源 turn 不变，
+  只有候选项会执行。
+- 在经过验证的 workspace 副本中运行候选项，并使用路径包含性保护；源 session 和
+  源 workspace 永远不会被重写或回滚。
+- 在终态边界恢复候选文件，同时保留持久事件、checkpoint hash、provenance 和对比证据。
+- host 重启后恢复带 checkpoint 的持久候选 workspace；当源/候选边界不分离时拒绝 cleanup。
+- 历史 turn-start checkpoint 不可用时，退回为带 provenance 标记的当前状态隔离
+  checkpoint；这不是严格的 S0 replay。
 - 只使用独立记录的证据生成评分卡。
 - 拒绝不受支持的 host-plane 变更和不完整变体。
 

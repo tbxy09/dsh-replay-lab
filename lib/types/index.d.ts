@@ -8,7 +8,11 @@ export { FixtureCaseSource } from './case-source.ts';
 export { JsonArtifactStore } from './artifact-store.ts';
 export { SessionMetricsExtractor, IndependentEvidenceOracle } from './metrics.ts';
 export { CordisAgentRunner, DeterministicReplayAdapter } from './runner.ts';
+export { DefaultReplayWorkspaceProvider, TurnCheckpointStore } from './replay-workspace.ts';
 export { builtInVariants } from './variants.ts';
+export * from './route-lineage.ts';
+export * from './call-evidence.ts';
+export * from './evidence-summary.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         replayLabDsh: ReplayLabService;
