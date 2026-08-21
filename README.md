@@ -1,12 +1,5 @@
 English | [简体中文](./README.zh-CN.md)
 
-![Generated Replay Lab evidence summary with retained cited facts and downloadable raw evidence](./assets/replay-run-detail.png)
-
-*Generated evidence summary from a completed Replay. It was produced by an
-explicit, one-shot direct model-runtime call—no agent was started. The
-narrative and cited evidence IDs are retained with the durable run evidence;
-this is not shared agent or cross-session memory.*
-
 # DSH Replay Lab (ReplayLab)
 
 **DSH Replay Lab is a DeepSeek Harness plugin for request-surface replay and A/B
@@ -33,6 +26,41 @@ while durable session events and comparison evidence remain available.
 
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
+
+## Replay evidence, one function at a time
+
+**1. Workspace isolation and retained run**
+
+![Workspace drift and retained isolated replay status](./assets/replay-workspace-isolation.png)
+
+Source advanced from the pre-turn S0 without being reverted; the isolated
+candidate run and its evidence remain retained.
+
+**2. Baseline-versus-candidate run metrics**
+
+![Observed baseline and isolated candidate execution metrics](./assets/replay-run-metrics.png)
+
+**3. Request-surface differences**
+
+![Request-surface differences between observed baseline and isolated candidate](./assets/replay-request-surface.png)
+
+Provider/model, request phases, and durable request hashes are compared
+independently of execution cost.
+
+**4. Candidate-minus-baseline execution delta**
+
+![Candidate-minus-baseline token, duration, step, and tool-call deltas](./assets/replay-execution-delta.png)
+
+Tokens, duration, steps, and tool calls describe observed activity—not outcome
+quality.
+
+**5. Generated evidence narrative**
+
+![Generated evidence narrative with cited retained facts](./assets/replay-evidence-summary.png)
+
+The narrative comes from an explicit, one-shot direct model-runtime call—no
+agent is started. Its cited evidence IDs and raw evidence remain with the
+durable run; this is not shared agent or cross-session memory.
 
 <details>
 <summary><h2>Why Replay Lab exists</h2></summary>

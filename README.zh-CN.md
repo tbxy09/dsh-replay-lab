@@ -1,11 +1,5 @@
 [English](./README.md) | 简体中文
 
-![Replay Lab 已生成的证据总结：展示持久引用事实和可下载原始证据](./assets/replay-run-detail.png)
-
-*这是一条已完成 Replay 所生成的证据总结。它来自一次显式触发的直接
-model-runtime 调用，未启动 Agent。生成的 narrative 和 cited evidence IDs 会随
-持久 run evidence 一起保留；它不是跨 Agent 或跨 session 共享的长期 memory。*
-
 # DSH Replay Lab（ReplayLab）
 
 **DSH Replay Lab - DeepSeek Harness 请求面重放与 A/B 实验插件：冻结 turn、隔离候选 session、对比 Request Surface/轨迹/成本**
@@ -28,6 +22,38 @@ session 事件与对比证据。
 
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
+
+## Replay 证据：每张图只说明一个功能
+
+**1. Workspace 隔离与持久运行**
+
+![Workspace drift 和保留的隔离 replay 状态](./assets/replay-workspace-isolation.png)
+
+Source 从 turn 开始前的 S0 继续演进且没有被回滚；隔离 candidate 的运行与证据会保留。
+
+**2. Baseline 与 candidate 运行指标**
+
+![Observed baseline 与隔离 candidate 的执行指标](./assets/replay-run-metrics.png)
+
+**3. Request Surface 差异**
+
+![Observed baseline 与隔离 candidate 的 Request Surface 差异](./assets/replay-request-surface.png)
+
+Provider/model、请求阶段和持久 request hash 与执行成本分开比较。
+
+**4. Candidate 减 baseline 的执行差异**
+
+![Candidate 减 baseline 的 token、耗时、step 和工具调用差异](./assets/replay-execution-delta.png)
+
+Token、耗时、step 和工具调用只描述已观测活动，不代表结果质量。
+
+**5. 已生成的证据 narrative**
+
+![已生成的证据 narrative 和引用的持久事实](./assets/replay-evidence-summary.png)
+
+Narrative 来自一次显式触发的直接 model-runtime 调用，不会启动 Agent。引用的
+evidence IDs 和 raw evidence 会随持久 run 保留；它不是跨 Agent 或跨 session
+共享的长期 memory。
 
 <details>
 <summary><h2>为什么需要 Replay Lab</h2></summary>
