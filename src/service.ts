@@ -3,12 +3,13 @@ import type { ArtifactStore, CaseSource, Oracle, ReplayHook, Runner } from './re
 import { ReplayLabRegistries } from './registries.ts'
 import { compareCallEvidence } from './call-evidence.ts'
 import type { EvidenceSummarizer } from './evidence-summary.ts'
-import type { FrozenReplayCase, LabSnapshot, ReplayExperiment, ReplayHistoryEntry, ReplayableTurnRecord, ReplayTurnIdentifier, RouteLineageEvidence, TransitionStage, VariantDescriptor } from './types.ts'
+import type { FrozenReplayCase, LabSnapshot, ReplayExperiment, ReplayHistoryEntry, ReplayableTurnRecord, ReplayTurnIdentifier, ReplayWorkspaceCheckpoint, RouteLineageEvidence, TransitionStage, VariantDescriptor } from './types.ts'
 import { freezeReplayTurn } from './case-source.ts'
 
 export interface ResolvedReplayTurn {
   record: ReplayableTurnRecord
   sourceCwd: string
+  checkpoint?: ReplayWorkspaceCheckpoint
 }
 
 export type ReplayTurnResolver = (identifier: ReplayTurnIdentifier) => Promise<ResolvedReplayTurn>
@@ -123,7 +124,7 @@ export class ReplayLabService {
   async admit(identifier: ReplayTurnIdentifier): Promise<LabSnapshot> {
     if (this.resolveTurn === undefined) throw new Error('session replay resolver is unavailable')
     const resolved = await this.resolveTurn(identifier)
-    const replayCase = await freezeReplayTurn(identifier.sessionId, resolved.record, resolved.sourceCwd)
+    const replayCase = await freezeReplayTurn(identifier.sessionId, resolved.record, resolved.sourceCwd, resolved.checkpoint)
     const current = this.drafts.get(identifier.sessionId)
     const retained = current !== undefined
       && current.replayCase.sourceTurn === identifier.turn
@@ -181,8 +182,22 @@ export class ReplayLabService {
     const [sessionId, draft] = this.requireDraft(requestedSessionId)
     if (draft.experiment === undefined) throw new Error('没有实验')
     if (!['planned', 'approved', 'running'].includes(draft.experiment.status)) throw new Error('当前实验不可中止')
-    const experiment = { ...draft.experiment, status: 'aborted' as const, updatedAt: new Date().toISOString() }
+    let experiment: ReplayExperiment = { ...draft.experiment, status: 'aborted', updatedAt: new Date().toISOString() }
     this.drafts.set(sessionId, { ...draft, experiment })
+    if (draft.experiment.status === 'running') {
+      const candidate = await this.runner().abort?.(draft.experiment.id)
+      const baseline = draft.replayCase.observedBaseline
+      const callEvidenceComparison = candidate === undefined || baseline === undefined
+        ? undefined
+        : compareCallEvidence(draft.replayCase.id, baseline, candidate)
+      experiment = {
+        ...experiment,
+        ...(baseline === undefined ? {} : { baseline }),
+        ...(candidate === undefined ? {} : { candidate }),
+        ...(callEvidenceComparison === undefined ? {} : { callEvidenceComparison }),
+      }
+      this.drafts.set(sessionId, { ...draft, experiment })
+    }
     this.upsertHistory(draft.replayCase, experiment)
     await this.transition('aborted', experiment)
     return this.snapshot(sessionId)

@@ -2,11 +2,14 @@ import { lstat, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import { hashDirectory } from '../src/hash.ts'
 import {
-  candidatePathGuard, copyWorkspaceSnapshot, DeterministicReplayAdapter, replayDisplayNames,
-  requestSurfaceEvidence,
+  candidatePathGuard, copyWorkspaceSnapshot, CordisAgentRunner, DeterministicReplayAdapter, discardWorkspaceSnapshot,
+  recoverManagedWorkspaceSnapshots, replayDisplayNames, requestSurfaceEvidence, rollbackWorkspaceSnapshot,
 } from '../src/runner.ts'
+import { DefaultReplayWorkspaceProvider } from '../src/replay-workspace.ts'
+import type { IsolatedWorkspace } from '../src/runner.ts'
 
 describe('deterministic replay adapter', () => {
   it('advertises complete replayable model metadata without provider credentials', async () => {
@@ -39,6 +42,10 @@ describe('candidate workspace isolation', () => {
       expect(isolated.provenance).toMatchObject({
         sourceCwd: resolve(sourceCwd), sourceHash, executionHash: sourceHash, isolation: 'copy',
         drift: { detected: false, frozenHash: sourceHash, currentHash: sourceHash },
+        checkpoint: {
+          schemaVersion: 'replay-workspace-checkpoint/v1', checkpointHash: sourceHash, sourceHash,
+        },
+        rollback: { status: 'pending' },
       })
       expect(isolated.durable).toBe(false)
       expect(isolated.provenance.executionCwd).not.toBe(resolve(sourceCwd))
@@ -46,32 +53,40 @@ describe('candidate workspace isolation', () => {
       expect(await readlink(join(isolated.provenance.executionCwd, 'dangling-bin'))).toBe('../missing-package/bin.js')
       await writeFile(join(isolated.provenance.executionCwd, 'task.txt'), 'candidate mutation', 'utf8')
       expect(await readFile(join(sourceCwd, 'task.txt'), 'utf8')).toBe('source')
+      await writeFile(join(sourceCwd, 'task.txt'), 'baseline/source session mutation', 'utf8')
       expect(await hashDirectory(isolated.provenance.executionCwd)).not.toBe(sourceHash)
+      await rollbackWorkspaceSnapshot(isolated)
+      expect(await readFile(join(sourceCwd, 'task.txt'), 'utf8')).toBe('baseline/source session mutation')
+      expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('source')
+      expect(isolated.provenance.rollback).toMatchObject({ status: 'restored', restoredHash: sourceHash })
     } finally {
       if (isolatedRoot !== undefined) await rm(isolatedRoot, { recursive: true, force: true })
       await rm(sourceCwd, { recursive: true, force: true })
     }
   })
 
-  it('copies the current source state and records provenance when it differs from the frozen hash', async () => {
+  it('materializes a stored S0 snapshot after the source advances to S1', async () => {
     const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-runner-stale-'))
     let isolatedRoot: string | undefined
     try {
       await writeFile(join(sourceCwd, 'task.txt'), 'frozen', 'utf8')
       const frozenHash = await hashDirectory(sourceCwd)
+      const provider = new DefaultReplayWorkspaceProvider()
+      const s0 = await provider.checkpoint(sourceCwd, 'turn-start')
       await writeFile(join(sourceCwd, 'task.txt'), 'current', 'utf8')
       await writeFile(join(sourceCwd, 'added.txt'), 'added after freeze', 'utf8')
 
-      const isolated = await copyWorkspaceSnapshot(sourceCwd, frozenHash)
+      const isolated = await provider.materialize(s0, frozenHash)
       isolatedRoot = isolated.root
       const currentHash = await hashDirectory(sourceCwd)
       expect(isolated.provenance).toMatchObject({
-        sourceHash: currentHash,
-        executionHash: currentHash,
+        sourceHash: frozenHash,
+        executionHash: frozenHash,
         drift: { detected: true, frozenHash, currentHash },
       })
-      expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('current')
-      expect(await readFile(join(isolated.provenance.executionCwd, 'added.txt'), 'utf8')).toBe('added after freeze')
+      expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('frozen')
+      expect(await lstat(join(isolated.provenance.executionCwd, 'added.txt')).then(() => true, () => false)).toBe(false)
+      expect(await readFile(join(sourceCwd, 'task.txt'), 'utf8')).toBe('current')
     } finally {
       if (isolatedRoot !== undefined) await rm(isolatedRoot, { recursive: true, force: true })
       await rm(sourceCwd, { recursive: true, force: true })
@@ -103,6 +118,178 @@ describe('candidate workspace isolation', () => {
       expect(isolated.root.startsWith(resolve(managedParent))).toBe(true)
       expect(isolated.provenance.executionCwd).toMatch(/replay-project-turn-1-standard$/)
       expect(isolated.provenance.policy).toMatch(/managed artifact directory/)
+      expect(isolated.provenance.checkpoint?.checkpointCwd).toMatch(/\.replay-checkpoint$/)
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+      await rm(managedParent, { recursive: true, force: true })
+    }
+  })
+
+  it('restores candidate mutations after a failed replay operation without reverting source changes', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-failed-source-'))
+    let isolatedRoot: string | undefined
+    try {
+      await writeFile(join(sourceCwd, 'task.txt'), 'checkpoint state', 'utf8')
+      const sourceHash = await hashDirectory(sourceCwd)
+      const isolated = await copyWorkspaceSnapshot(sourceCwd, sourceHash)
+      isolatedRoot = isolated.root
+
+      await expect((async () => {
+        try {
+          await writeFile(join(isolated.provenance.executionCwd, 'task.txt'), 'failed candidate mutation', 'utf8')
+          await writeFile(join(sourceCwd, 'source-only.txt'), 'must persist', 'utf8')
+          throw new Error('candidate failed')
+        } finally {
+          await rollbackWorkspaceSnapshot(isolated)
+        }
+      })()).rejects.toThrow('candidate failed')
+
+      expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('checkpoint state')
+      expect(await readFile(join(sourceCwd, 'source-only.txt'), 'utf8')).toBe('must persist')
+      expect(isolated.provenance.rollback?.status).toBe('restored')
+    } finally {
+      if (isolatedRoot !== undefined) await rm(isolatedRoot, { recursive: true, force: true })
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
+  })
+
+  it('reconciles durable candidate mutations from the checkpoint after restart', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-restart-source-'))
+    const managedParent = await mkdtemp(join(tmpdir(), 'rld-restart-managed-'))
+    try {
+      await writeFile(join(sourceCwd, 'task.txt'), 'checkpoint state', 'utf8')
+      const sourceHash = await hashDirectory(sourceCwd)
+      const isolated = await copyWorkspaceSnapshot(sourceCwd, sourceHash, {
+        parentDirectory: managedParent, executionName: 'restart-candidate',
+      })
+      await writeFile(join(isolated.provenance.executionCwd, 'task.txt'), 'interrupted mutation', 'utf8')
+      await writeFile(join(sourceCwd, 'source-after-checkpoint.txt'), 'preserved', 'utf8')
+
+      await expect(recoverManagedWorkspaceSnapshots(managedParent)).resolves.toBe(1)
+      expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('checkpoint state')
+      expect(await readFile(join(sourceCwd, 'source-after-checkpoint.txt'), 'utf8')).toBe('preserved')
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+      await rm(managedParent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects rollback and cleanup metadata that could target the source workspace', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-boundary-source-'))
+    try {
+      await writeFile(join(sourceCwd, 'task.txt'), 'untouched source', 'utf8')
+      const sourceHash = await hashDirectory(sourceCwd)
+      const unsafe: IsolatedWorkspace = {
+        root: sourceCwd,
+        durable: false,
+        provenance: {
+          sourceCwd, sourceHash, executionCwd: sourceCwd, executionHash: sourceHash,
+          isolation: 'copy', policy: 'malformed test fixture',
+          checkpoint: {
+            schemaVersion: 'replay-workspace-checkpoint/v1', checkpointCwd: sourceCwd,
+            checkpointHash: sourceHash, sourceHash, createdAt: new Date().toISOString(),
+          },
+          rollback: { status: 'pending' },
+        },
+      }
+
+      await expect(rollbackWorkspaceSnapshot(unsafe)).rejects.toThrow(/disjoint from the source/)
+      await expect(discardWorkspaceSnapshot(unsafe)).rejects.toThrow(/disjoint from the source/)
+      expect(await readFile(join(sourceCwd, 'task.txt'), 'utf8')).toBe('untouched source')
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a managed candidate parent inside the source before creating any files', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-parent-boundary-source-'))
+    try {
+      await writeFile(join(sourceCwd, 'task.txt'), 'untouched source', 'utf8')
+      const sourceHash = await hashDirectory(sourceCwd)
+      const unsafeParent = join(sourceCwd, '.replay-artifacts', 'candidate-workspaces')
+
+      await expect(copyWorkspaceSnapshot(sourceCwd, sourceHash, {
+        parentDirectory: unsafeParent, executionName: 'unsafe',
+      })).rejects.toThrow(/parent must not be inside the source/)
+      await expect(lstat(unsafeParent)).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(await hashDirectory(sourceCwd)).toBe(sourceHash)
+    } finally {
+      await rm(sourceCwd, { recursive: true, force: true })
+    }
+  })
+
+  it('the runner restores its durable candidate cwd even when candidate execution fails', async () => {
+    const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-runner-finally-source-'))
+    const managedParent = await mkdtemp(join(tmpdir(), 'rld-runner-finally-managed-'))
+    let executionCwd: string | undefined
+    try {
+      await writeFile(join(sourceCwd, 'task.txt'), 'checkpoint state', 'utf8')
+      const sourceHash = await hashDirectory(sourceCwd)
+      const events: Array<{ type: string; data: unknown }> = []
+      let mutation = Promise.resolve()
+      const session = {
+        id: 'replay-experiment-standard-test', header: { cwd: '' }, events,
+        append(type: string, data: unknown) { events.push({ type, data }) },
+      }
+      const agent = {
+        session,
+        followup() {
+          mutation = writeFile(join(executionCwd as string, 'task.txt'), 'failed candidate mutation', 'utf8')
+        },
+        async whenIdle() {
+          await mutation
+          throw new Error('fixture candidate failed')
+        },
+        cancel() {},
+      }
+      const ctx = {
+        agents: {
+          async create(options: { meta: { cwd: string } }) {
+            executionCwd = options.meta.cwd
+            session.header.cwd = options.meta.cwd
+            return { agent, async dispose() {} }
+          },
+        },
+        agentPresets: { async mount() {} },
+        sessionTitle: { rename() {} },
+        workspaceRegistry: {
+          async create() { return { id: 'candidate-workspace', async attachSession() {} } },
+          async resolveByPath() { return undefined },
+          list() { return [] },
+          async insertBefore() {},
+        },
+      } as unknown as Context
+      const runner = new CordisAgentRunner(
+        ctx,
+        { id: 'metrics', extract: () => undefined },
+        () => ({
+          id: 'standard', label: 'Standard replay', description: 'test', plane: 'agent', preset: 'standard',
+          pluginSurface: 'preset:standard', supported: true, requestPhases: ['request'], behavior: 'normal',
+        }),
+        managedParent,
+      )
+      const result = await runner.run({
+        replayCase: {
+          id: 'case', sourceId: 'source', sourceSessionId: 'source-session', sourceTurn: 1,
+          createdAt: new Date().toISOString(), prompt: 'mutate task', promptHash: 'prompt-hash',
+          sourceCwd, sourceWorkspaceHash: sourceHash, provider: 'fake', model: 'fixture', reasoning: 'off',
+          maxTokens: 256, presetSurface: 'standard', systemHash: 'system', toolSchemaHash: 'tools',
+        },
+        experimentId: 'experiment',
+        variant: {
+          id: 'standard', label: 'Standard replay', description: 'test', plane: 'agent', preset: 'standard',
+          pluginSurface: 'preset:standard', supported: true, requestPhases: ['request'], behavior: 'normal',
+        },
+      })
+
+      expect(result).toMatchObject({
+        status: 'failed', complete: false, missingReason: 'fixture candidate failed',
+        workspace: { rollback: { status: 'restored', restoredHash: sourceHash } },
+      })
+      expect(await readFile(join(executionCwd as string, 'task.txt'), 'utf8')).toBe('checkpoint state')
+      expect(await readFile(join(sourceCwd, 'task.txt'), 'utf8')).toBe('checkpoint state')
+      expect(events.at(-1)).toEqual({ type: 'sandbox/mode', data: { mode: 'read-only' } })
+      expect(runner.isActiveCandidateSession(String(session.id))).toBe(false)
     } finally {
       await rm(sourceCwd, { recursive: true, force: true })
       await rm(managedParent, { recursive: true, force: true })

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { CaseSource } from './registries.ts'
 import { canonicalJson, hashDirectory, sha256 } from './hash.ts'
-import type { FrozenReplayCase, HistoryTurnSource, ReplayableTurnRecord } from './types.ts'
+import type { FrozenReplayCase, HistoryTurnSource, ReplayableTurnRecord, ReplayWorkspaceCheckpoint } from './types.ts'
 
 function requireString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
@@ -54,6 +54,7 @@ export async function freezeReplayTurn(
   sessionId: string,
   record: ReplayableTurnRecord,
   sourceCwd: string,
+  checkpoint?: ReplayWorkspaceCheckpoint,
 ): Promise<FrozenReplayCase> {
   if (!record.replayable || record.evidenceHash === null) {
     throw new Error(`turn ${record.turn} is not replayable: ${record.missingFields.join(', ') || 'incomplete evidence'}`)
@@ -63,7 +64,7 @@ export async function freezeReplayTurn(
     || record.toolSchemaHash === null || record.metrics === null) {
     throw new Error(`turn ${record.turn} has inconsistent replay evidence`)
   }
-  const sourceWorkspaceHash = await hashDirectory(resolve(sourceCwd))
+  const sourceWorkspaceHash = checkpoint?.sourceHash ?? await hashDirectory(resolve(sourceCwd))
   const frozen = buildCase({
     id: `${sessionId}:${record.turn}`,
     sessionId,
@@ -99,6 +100,7 @@ export async function freezeReplayTurn(
   return Object.freeze({
     ...frozen,
     observedBaseline,
+    ...(checkpoint === undefined ? {} : { sourceCheckpoint: checkpoint }),
   })
 }
 

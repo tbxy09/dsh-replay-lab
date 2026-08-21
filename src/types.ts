@@ -91,6 +91,8 @@ export interface FrozenReplayCase {
   sourceCwd: string
   /** Hash of the durable source cwd at case-freeze time. */
   sourceWorkspaceHash: string
+  /** Pre-turn S0 snapshot. Candidate materialization must use this, never post-baseline HEAD. */
+  sourceCheckpoint?: ReplayWorkspaceCheckpoint
   provider: string
   model: string
   reasoning: string
@@ -299,10 +301,57 @@ export interface WorkspaceProvenance {
   sourceHash: string
   executionCwd: string
   executionHash: string
-  isolation: 'observed-source' | 'copy'
+  isolation: 'observed-source' | 'copy' | 'git-worktree'
   policy: string
+  /** Explicit immutable replay checkpoint, created before the candidate session starts. */
+  checkpoint?: WorkspaceCheckpointProvenance
+  /** Terminal disposition of candidate file mutations. */
+  rollback?: WorkspaceRollbackProvenance
   /** Omitted only when reading legacy/custom workspace evidence. */
   drift?: WorkspaceDriftProvenance
+}
+
+export type ReplayWorkspaceKind = 'git-commit' | 'files'
+export type ReplayCheckpointCapture = 'turn-start' | 'admit' | 'freeze' | 'materialize'
+
+export interface ReplayWorkspaceGitIdentity {
+  gitRoot: string
+  commit: string
+  tree: string
+  sourceRelative: string
+  ref: string
+}
+
+/** Durable S0 identity. Git objects stay in the source repo; file snapshots are disjoint copies. */
+export interface ReplayWorkspaceCheckpoint {
+  schemaVersion: 'replay-workspace-checkpoint/v1'
+  kind: ReplayWorkspaceKind
+  sourceCwd: string
+  checkpointHash: string
+  sourceHash: string
+  createdAt: string
+  capturedAt: ReplayCheckpointCapture
+  checkpointCwd?: string
+  git?: ReplayWorkspaceGitIdentity
+}
+
+export interface WorkspaceCheckpointProvenance {
+  schemaVersion: 'replay-workspace-checkpoint/v1'
+  checkpointHash: string
+  sourceHash: string
+  createdAt: string
+  kind?: ReplayWorkspaceKind
+  capturedAt?: ReplayCheckpointCapture
+  checkpointCwd?: string
+  git?: ReplayWorkspaceGitIdentity
+}
+
+export interface WorkspaceRollbackProvenance {
+  status: 'pending' | 'restored' | 'failed'
+  /** Hash of the restored execution cwd; present after successful rollback. */
+  restoredHash?: string
+  completedAt?: string
+  error?: string
 }
 
 export interface ScorecardRow {

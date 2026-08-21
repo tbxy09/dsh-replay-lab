@@ -1,8 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, realpathSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { tmpdir } from 'node:os'
+import { basename, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
@@ -14,44 +11,29 @@ import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { evidenceDigest } from './metrics.ts'
 import { extractRawCallEvidence } from './call-evidence.ts'
-import { canonicalJson, hashDirectory, sha256 } from './hash.ts'
+import { canonicalJson, sha256 } from './hash.ts'
 import type { MetricsExtractor, Runner, VariantContributor } from './registries.ts'
-import type {
-  FrozenReplayCase, RequestSurfaceEvidence, RunEvidence, VariantDescriptor, WorkspaceProvenance,
-} from './types.ts'
+import {
+  copyWorkspaceSnapshot, discardWorkspaceSnapshot, materializeWorkspaceCheckpoint,
+  recoverManagedWorkspaceSnapshots, rollbackWorkspaceSnapshot, safePathSegment,
+  inside, realTarget, type IsolatedWorkspace, type WorkspaceSnapshotOptions,
+} from './replay-workspace.ts'
+import type { FrozenReplayCase, RequestSurfaceEvidence, RunEvidence, VariantDescriptor } from './types.ts'
 
-export interface IsolatedWorkspace {
-  root: string
-  durable: boolean
-  provenance: WorkspaceProvenance
+export type { IsolatedWorkspace, WorkspaceSnapshotOptions } from './replay-workspace.ts'
+export {
+  copyWorkspaceSnapshot, discardWorkspaceSnapshot, materializeWorkspaceCheckpoint,
+  recoverManagedWorkspaceSnapshots, rollbackWorkspaceSnapshot,
 }
 
-export interface WorkspaceSnapshotOptions {
-  /** Persistent parent used by approved candidate sessions so sidebar membership survives restart. */
-  parentDirectory?: string
-  /** Human-derived leaf name; only filesystem-safe characters are retained. */
-  executionName?: string
+interface ActiveCandidate {
+  aborted: boolean
+  handle?: AgentHandle
+  promise?: Promise<RunEvidence>
 }
 
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
-}
-
-function realTarget(path: string): string {
-  const target = resolve(path)
-  let existing = target
-  while (!existsSync(existing)) {
-    const parent = dirname(existing)
-    if (parent === existing) break
-    existing = parent
-  }
-  const canonicalExisting = realpathSync(existing)
-  return resolve(canonicalExisting, relative(existing, target))
-}
-
-function inside(root: string, target: string): boolean {
-  const child = relative(root, target)
-  return child === '' || (child !== '..' && !child.startsWith(`..${sep}`))
 }
 
 function pathValues(value: unknown, key = ''): string[] {
@@ -100,11 +82,6 @@ export function requestSurfaceEvidence(
   })
 }
 
-function safePathSegment(value: string): string {
-  const segment = value.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-  return segment.slice(0, 96) || 'replay'
-}
-
 export function replayDisplayNames(
   replayCase: Pick<FrozenReplayCase, 'sourceCwd' | 'sourceTurn'>,
   variant: Pick<VariantDescriptor, 'id' | 'label'>,
@@ -115,42 +92,6 @@ export function replayDisplayNames(
     workspaceTitle: `${source} · Isolated Replay · Turn ${replayCase.sourceTurn} · ${candidate}`,
     sessionTitle: `Replay · Turn ${replayCase.sourceTurn} · ${candidate}`,
     executionName: safePathSegment(`${source}-turn-${replayCase.sourceTurn}-${variant.id}`),
-  }
-}
-
-/** Copy the current source workspace and retain its comparison with the frozen case hash. */
-export async function copyWorkspaceSnapshot(
-  sourceCwd: string,
-  expectedHash: string,
-  options: WorkspaceSnapshotOptions = {},
-): Promise<IsolatedWorkspace> {
-  const source = resolve(sourceCwd)
-  const sourceHash = await hashDirectory(source)
-  const durable = options.parentDirectory !== undefined
-  const parent = durable ? resolve(options.parentDirectory as string) : tmpdir()
-  await mkdir(parent, { recursive: true })
-  const root = await mkdtemp(join(parent, 'candidate-'))
-  const executionCwd = join(root, safePathSegment(options.executionName ?? 'replay'))
-  try {
-    await cp(source, executionCwd, {
-      recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true,
-    })
-    const executionHash = await hashDirectory(executionCwd)
-    if (executionHash !== sourceHash) throw new Error('isolated workspace copy does not match the current source snapshot')
-    return {
-      root, durable,
-      provenance: {
-        sourceCwd: source, sourceHash, executionCwd, executionHash,
-        isolation: 'copy',
-        drift: { detected: sourceHash !== expectedHash, frozenHash: expectedHash, currentHash: sourceHash },
-        policy: durable
-          ? 'recursive symlink-preserving copy in the Replay Lab managed artifact directory'
-          : 'recursive symlink-preserving copy in a process-owned temporary directory',
-      },
-    }
-  } catch (error) {
-    await rm(root, { recursive: true, force: true })
-    throw error
   }
 }
 
@@ -198,7 +139,8 @@ export class DeterministicReplayAdapter extends LlmAdapter {
 export class CordisAgentRunner implements Runner {
   readonly id = 'cordis-agent-runner'
   private readonly handles = new Set<AgentHandle>()
-  private readonly isolatedRoots = new Set<string>()
+  private readonly isolatedRoots = new Map<string, IsolatedWorkspace>()
+  private readonly activeCandidates = new Map<string, ActiveCandidate>()
 
   constructor(
     private readonly ctx: Context,
@@ -207,24 +149,56 @@ export class CordisAgentRunner implements Runner {
     private readonly managedWorkspaceDirectory?: string,
   ) {}
 
+  async recoverManagedWorkspaces(): Promise<number> {
+    return this.managedWorkspaceDirectory === undefined
+      ? 0
+      : recoverManagedWorkspaceSnapshots(this.managedWorkspaceDirectory)
+  }
+
+  /** Candidate and descendant tool access is writable only during the owned replay run. */
+  isActiveCandidateSession(sessionId: string): boolean {
+    return [...this.activeCandidates.values()].some(active =>
+      !active.aborted && active.handle !== undefined && String(active.handle.agent.session.id) === sessionId)
+  }
+
   async run(input: { replayCase: FrozenReplayCase; experimentId: string; variant: VariantDescriptor }): Promise<RunEvidence> {
+    const active: ActiveCandidate = { aborted: false }
+    this.activeCandidates.set(input.experimentId, active)
+    const promise = this.runCandidate(input, active)
+    active.promise = promise
+    try {
+      return await promise
+    } finally {
+      if (this.activeCandidates.get(input.experimentId) === active) this.activeCandidates.delete(input.experimentId)
+    }
+  }
+
+  private async runCandidate(
+    input: { replayCase: FrozenReplayCase; experimentId: string; variant: VariantDescriptor },
+    active: ActiveCandidate,
+  ): Promise<RunEvidence> {
     const sessionId = SessionId(`replay-${input.experimentId}-${input.variant.id}-${randomUUID()}`)
     const runId = `run-${randomUUID()}`
     const hookPhases: string[] = []
     let handle: AgentHandle | undefined
     let workspace: IsolatedWorkspace | undefined
+    let evidence: RunEvidence | undefined
     try {
       const variant = this.variantLookup(input.variant.id)
       if (variant === undefined || !variant.supported || variant.preset === undefined) {
         throw new Error(variant?.unsupportedReason ?? `variant ${input.variant.id} 不可运行`)
       }
       const names = replayDisplayNames(input.replayCase, input.variant)
-      workspace = await copyWorkspaceSnapshot(
-        input.replayCase.sourceCwd,
-        input.replayCase.sourceWorkspaceHash,
-        { parentDirectory: this.managedWorkspaceDirectory, executionName: names.executionName },
-      )
-      if (!workspace.durable) this.isolatedRoots.add(workspace.root)
+      const snapshotOptions = { parentDirectory: this.managedWorkspaceDirectory, executionName: names.executionName }
+      workspace = input.replayCase.sourceCheckpoint === undefined
+        ? await copyWorkspaceSnapshot(input.replayCase.sourceCwd, input.replayCase.sourceWorkspaceHash, snapshotOptions)
+        : await materializeWorkspaceCheckpoint(
+          input.replayCase.sourceCheckpoint,
+          input.replayCase.sourceWorkspaceHash,
+          snapshotOptions,
+        )
+      if (!workspace.durable) this.isolatedRoots.set(workspace.root, workspace)
+      if (active.aborted) throw new Error('candidate run aborted before session creation')
       handle = await this.ctx.agents.create({
         sessionId,
         meta: { cwd: workspace.provenance.executionCwd, agentPreset: variant.preset },
@@ -239,7 +213,13 @@ export class CordisAgentRunner implements Runner {
           variant.install?.(agentCtx, hookPhases)
         },
       })
+      active.handle = handle
       this.handles.add(handle)
+      if (active.aborted) {
+        await handle.dispose()
+        this.handles.delete(handle)
+        throw new Error('candidate run aborted during session creation')
+      }
       // Freeze every approved candidate (and its confined shell) to the isolated cwd,
       // independent of a user's deployment-wide default mode.
       setSandboxMode(handle.agent.session, 'workspace-write')
@@ -272,7 +252,7 @@ export class CordisAgentRunner implements Runner {
       const requestPhases = requestSurfaces.length > 0
         ? requestSurfaces.map(surface => surface.phase)
         : hookPhases.length > 0 ? hookPhases : variant.requestPhases.slice(0, 1)
-      return {
+      evidence = {
         runId,
         sessionId,
         variantId: variant.id,
@@ -288,7 +268,7 @@ export class CordisAgentRunner implements Runner {
     } catch (error) {
       const events = handle === undefined ? [] : [...handle.agent.session.events]
       const callEvidence = extractRawCallEvidence(events)
-      return {
+      evidence = {
         runId,
         sessionId,
         variantId: input.variant.id,
@@ -301,15 +281,56 @@ export class CordisAgentRunner implements Runner {
         ...(callEvidence === undefined ? {} : { callEvidence }),
         ...(workspace === undefined ? {} : { workspace: workspace.provenance }),
       }
+    } finally {
+      if (workspace !== undefined) {
+        const terminalErrors: string[] = []
+        if (handle !== undefined) {
+          try { setSandboxMode(handle.agent.session, 'read-only') } catch (error) {
+            terminalErrors.push(`read-only seal failed: ${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
+        try {
+          await rollbackWorkspaceSnapshot(workspace, input.replayCase.sourceWorkspaceHash)
+        } catch (error) {
+          terminalErrors.push(`workspace rollback failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        if (terminalErrors.length > 0) {
+          const prior = evidence?.missingReason
+          evidence = {
+            ...(evidence ?? {
+              runId, sessionId, variantId: input.variant.id, requestPhases: Object.freeze([...hookPhases]),
+              eventCount: handle === undefined ? 0 : handle.agent.session.events.length,
+              evidenceHash: evidenceDigest(sessionId, handle === undefined ? [] : [...handle.agent.session.events]),
+            }),
+            status: 'failed', complete: false,
+            missingReason: `${prior === undefined ? '' : `${prior}; `}candidate terminal isolation failed: ${terminalErrors.join('; ')}`,
+            workspace: workspace.provenance,
+          }
+        }
+      }
     }
+    return evidence as RunEvidence
+  }
+
+  async abort(experimentId: string): Promise<RunEvidence | undefined> {
+    const active = this.activeCandidates.get(experimentId)
+    if (active === undefined) return undefined
+    active.aborted = true
+    if (active.handle !== undefined) {
+      active.handle.agent.cancel({ kind: 'hook', reason: 'Replay Lab experiment aborted' })
+      await active.handle.agent.whenIdle()
+    }
+    return active.promise
   }
 
   async dispose(): Promise<void> {
+    for (const active of this.activeCandidates.values()) active.aborted = true
     const handles = [...this.handles]
     this.handles.clear()
     await Promise.all(handles.map(handle => handle.dispose()))
-    const roots = [...this.isolatedRoots]
+    await Promise.allSettled([...this.activeCandidates.values()].flatMap(active => active.promise === undefined ? [] : [active.promise]))
+    const roots = [...this.isolatedRoots.values()]
     this.isolatedRoots.clear()
-    await Promise.all(roots.map(root => rm(root, { recursive: true, force: true })))
+    await Promise.all(roots.map(workspace => discardWorkspaceSnapshot(workspace)))
   }
 }

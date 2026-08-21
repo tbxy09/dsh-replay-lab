@@ -8,7 +8,8 @@ import type { FrozenReplayCase, HistoryTurnSource, LabSnapshot, ReplayableTurnRe
 import { IndependentEvidenceOracle } from '../src/metrics.ts'
 import { builtInVariants } from '../src/variants.ts'
 import { hashDirectory } from '../src/hash.ts'
-import { copyWorkspaceSnapshot } from '../src/runner.ts'
+import { copyWorkspaceSnapshot, materializeWorkspaceCheckpoint } from '../src/runner.ts'
+import { DefaultReplayWorkspaceProvider } from '../src/replay-workspace.ts'
 import type { EvidenceSummarizer } from '../src/evidence-summary.ts'
 
 const baselineMetrics = { freshInputTokens: 11, outputTokens: 7, cacheReadTokens: 3, durationMs: 90, stepCount: 2, toolCalls: 1 }
@@ -134,24 +135,28 @@ describe('ReplayLabService', () => {
     })])
   })
 
-  it('completes and persists a drifted candidate against the current isolated workspace', async () => {
+  it('completes and persists a candidate materialized from S0 after the source advances to S1', async () => {
     const sourceCwd = await mkdtemp(join(tmpdir(), 'rld-drift-service-'))
     let isolatedRoot: string | undefined
     try {
       await writeFile(join(sourceCwd, 'task.txt'), 'frozen source', 'utf8')
       const frozenHash = await hashDirectory(sourceCwd)
+      const sourceCheckpoint = await new DefaultReplayWorkspaceProvider().checkpoint(sourceCwd, 'turn-start')
       const frozenCase: FrozenReplayCase = {
         ...replayCase,
         sourceCwd,
         sourceWorkspaceHash: frozenHash,
+        sourceCheckpoint,
       }
       const store = new MemoryStore()
       const runner: Runner = {
         id: 'runner',
         async run({ replayCase: candidateCase, variant }): Promise<RunEvidence> {
-          const isolated = await copyWorkspaceSnapshot(candidateCase.sourceCwd, candidateCase.sourceWorkspaceHash)
+          const isolated = candidateCase.sourceCheckpoint === undefined
+            ? await copyWorkspaceSnapshot(candidateCase.sourceCwd, candidateCase.sourceWorkspaceHash)
+            : await materializeWorkspaceCheckpoint(candidateCase.sourceCheckpoint, candidateCase.sourceWorkspaceHash)
           isolatedRoot = isolated.root
-          expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('current source')
+          expect(await readFile(join(isolated.provenance.executionCwd, 'task.txt'), 'utf8')).toBe('frozen source')
           return {
             runId: 'drifted-run', sessionId: 'drifted-candidate-session', variantId: variant.id,
             status: 'completed', requestPhases: ['request'], metrics: baselineMetrics,
@@ -278,6 +283,43 @@ describe('ReplayLabService', () => {
     } finally {
       await rm(sourceCwd, { recursive: true, force: true })
     }
+  })
+
+  it('marks an active experiment aborted before asking the runner to terminate it', async () => {
+    let finishRun!: (evidence: RunEvidence) => void
+    const pending = new Promise<RunEvidence>(resolveRun => { finishRun = resolveRun })
+    let abortedExperimentId: string | undefined
+    const service = makeService(caseSource(), {
+      id: 'runner',
+      run: async () => pending,
+      async abort(experimentId) {
+        abortedExperimentId = experimentId
+        const evidence: RunEvidence = {
+          runId: 'aborted-run', sessionId: 'aborted-candidate', variantId: 'standard', status: 'failed',
+          requestPhases: [], complete: false, missingReason: 'candidate run aborted', eventCount: 2,
+          evidenceHash: 'aborted-evidence-hash', callEvidence: rawCallEvidence,
+        }
+        finishRun(evidence)
+        return evidence
+      },
+    })
+    await service.freeze('source')
+    await service.plan('standard')
+    const running = await service.approveAndRun()
+    const experimentId = running.experiment?.id
+
+    const aborted = await service.abort()
+    expect(abortedExperimentId).toBe(experimentId)
+    expect(aborted.experiment).toMatchObject({
+      id: experimentId, status: 'aborted', baseline: { sessionId: 'source-session' },
+      candidate: { sessionId: 'aborted-candidate', evidenceHash: 'aborted-evidence-hash' },
+      callEvidenceComparison: { candidateEvidenceHash: 'aborted-evidence-hash' },
+    })
+    expect(aborted.history).toEqual([expect.objectContaining({
+      experiment: expect.objectContaining({ id: experimentId, status: 'aborted' }),
+    })])
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect((await service.snapshot()).experiment?.status).toBe('aborted')
   })
 
   it('fails closed for a host-plane candidate', async () => {

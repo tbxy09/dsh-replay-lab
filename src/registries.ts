@@ -28,6 +28,8 @@ export interface CaseSource extends Identified {
 
 export interface Runner extends Identified {
   run(input: { replayCase: FrozenReplayCase; experimentId: string; variant: VariantDescriptor }): Promise<RunEvidence>
+  /** Best-effort cancellation for an active candidate; terminal cleanup remains runner-owned. */
+  abort?(experimentId: string): Promise<RunEvidence | undefined>
 }
 
 export interface MetricsExtractor extends Identified {

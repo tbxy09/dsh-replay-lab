@@ -171,7 +171,7 @@ describe('per-turn replay history', () => {
   it('renders drift as a non-blocking status with frozen and current hashes', () => {
     const drift = { detected: true, frozenHash: 'a'.repeat(64), currentHash: 'b'.repeat(64) }
     const notice = WorkspaceDriftNotice({ drift })
-    expect(workspaceDriftNotice(drift)).toMatch(/current workspace state/)
+    expect(workspaceDriftNotice(drift)).toMatch(/pre-turn S0 checkpoint/)
     expect(isValidElement(notice)).toBe(true)
     const element = notice as ReactElement<{ role: string; children: ReactNode }>
     expect(element.props.role).toBe('status')

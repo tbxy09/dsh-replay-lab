@@ -1,10 +1,11 @@
 import type { ArtifactStore } from './registries.ts';
 import { ReplayLabRegistries } from './registries.ts';
 import type { EvidenceSummarizer } from './evidence-summary.ts';
-import type { LabSnapshot, ReplayableTurnRecord, ReplayTurnIdentifier, RouteLineageEvidence } from './types.ts';
+import type { LabSnapshot, ReplayableTurnRecord, ReplayTurnIdentifier, ReplayWorkspaceCheckpoint, RouteLineageEvidence } from './types.ts';
 export interface ResolvedReplayTurn {
     record: ReplayableTurnRecord;
     sourceCwd: string;
+    checkpoint?: ReplayWorkspaceCheckpoint;
 }
 export type ReplayTurnResolver = (identifier: ReplayTurnIdentifier) => Promise<ResolvedReplayTurn>;
 export type RouteLineageResolver = (sessionId?: string) => Promise<readonly RouteLineageEvidence[]>;

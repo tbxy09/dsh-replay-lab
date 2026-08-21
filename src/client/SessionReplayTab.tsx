@@ -219,6 +219,9 @@ function EvidenceSummary({ title, evidence }: { title: string; evidence?: RunEvi
               <dd title={surface.toolNames.join(', ')}>{surface.toolNames.join(', ') || 'No tools'}</dd>
             </div>)}
             <div><dt>Events</dt><dd title={String(evidence.eventCount)}>{formatCount(evidence.eventCount)}</dd></div>
+            <div><dt>Evidence hash</dt><dd title={evidence.evidenceHash}>{evidence.evidenceHash === undefined ? 'Unavailable' : compactIdentifier(evidence.evidenceHash)}</dd></div>
+            {evidence.workspace?.checkpoint !== undefined && <div><dt>Checkpoint</dt><dd title={evidence.workspace.checkpoint.checkpointHash}>{compactIdentifier(evidence.workspace.checkpoint.checkpointHash)}</dd></div>}
+            {evidence.workspace?.rollback !== undefined && <div><dt>Replay files</dt><dd>{evidence.workspace.rollback.status === 'restored' ? 'Restored to checkpoint' : evidence.workspace.rollback.status}</dd></div>}
           </dl>
           {evidence.metrics === undefined
             ? <p className="rld-session-warning" role="status">Evidence unavailable: {evidence.missingReason ?? 'incomplete event stream'}</p>
@@ -234,7 +237,7 @@ function EvidenceSummary({ title, evidence }: { title: string; evidence?: RunEvi
 
 export function workspaceDriftNotice(drift: WorkspaceDriftProvenance | undefined): string | undefined {
   return drift?.detected === true
-    ? 'Workspace changed after this replay case was frozen. The candidate used the current workspace state, so this is not a strict controlled comparison.'
+    ? 'Source workspace continued past the pre-turn S0 checkpoint. The candidate replayed from that snapshot; the source was not reverted.'
     : undefined
 }
 

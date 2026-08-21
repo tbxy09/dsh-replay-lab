@@ -17,6 +17,7 @@ import { JsonArtifactStore } from './artifact-store.ts'
 import { createHttpHandler } from './http.ts'
 import { IndependentEvidenceOracle, SessionMetricsExtractor } from './metrics.ts'
 import { candidatePathGuard, DeterministicReplayAdapter, CordisAgentRunner } from './runner.ts'
+import { DefaultReplayWorkspaceProvider, TurnCheckpointStore } from './replay-workspace.ts'
 import { ReplayLabService } from './service.ts'
 import { builtInVariants } from './variants.ts'
 import { replayTurnsProjectionDefinition } from './replay-turn-projection.ts'
@@ -31,6 +32,7 @@ export { FixtureCaseSource } from './case-source.ts'
 export { JsonArtifactStore } from './artifact-store.ts'
 export { SessionMetricsExtractor, IndependentEvidenceOracle } from './metrics.ts'
 export { CordisAgentRunner, DeterministicReplayAdapter } from './runner.ts'
+export { DefaultReplayWorkspaceProvider, TurnCheckpointStore } from './replay-workspace.ts'
 export { builtInVariants } from './variants.ts'
 export * from './route-lineage.ts'
 export * from './call-evidence.ts'
@@ -81,6 +83,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const base = baseDirectory(ctx)
   const workspaceFixture = absolute(base, config.workspaceFixture)
   ctx.sessionProjections.register(replayTurnsProjectionDefinition)
+  const artifactDirectory = absolute(base, config.artifactDirectory)
+  const store = new JsonArtifactStore(absolute(base, config.stateFile), artifactDirectory)
+  const turnCheckpoints = new TurnCheckpointStore()
+  const workspaceProvider = new DefaultReplayWorkspaceProvider(join(artifactDirectory, 's0-checkpoints'))
   const resolveTurn = async (identifier: ReplayTurnIdentifier) => {
     const session = ctx.sessions.get(identifier.sessionId as SessionId)
     if (session === undefined) throw new Error(`session "${identifier.sessionId}" is not live`)
@@ -99,11 +105,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     const presetSurface = record.presetSurface ?? resolveSessionPreset(session) ?? null
     if (presetSurface === null) throw new Error(`turn ${identifier.turn} has no durable preset/plugin surface`)
-    return { record: { ...record, presetSurface }, sourceCwd }
+    return {
+      record: { ...record, presetSurface },
+      sourceCwd,
+      checkpoint: turnCheckpoints.get(identifier.sessionId, identifier.turn),
+    }
   }
   const source = new FixtureCaseSource(absolute(base, config.historyFixture), workspaceFixture)
-  const artifactDirectory = absolute(base, config.artifactDirectory)
-  const store = new JsonArtifactStore(absolute(base, config.stateFile), artifactDirectory)
   const sessionLogs = (): DurableSessionRouteLog[] => ctx.sessions.list().map(session => ({
     sessionId: String(session.header.id),
     header: session.header,
@@ -145,10 +153,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     id => service.registries.variants.get(id),
     join(artifactDirectory, 'candidate-workspaces'),
   )
+  const recoveredWorkspaces = await runner.recoverManagedWorkspaces()
+  if (recoveredWorkspaces > 0) {
+    ctx.logger.info('Replay Lab restored %d durable candidate workspace(s) from checkpoints', recoveredWorkspaces)
+  }
   ctx.tools.guard((exec) => {
     let session = exec.agent?.session
     while (session !== undefined) {
       if (String(session.id).startsWith('replay-')) {
+        if (!runner.isActiveCandidateSession(String(session.id))) {
+          return 'Replay candidate sessions are read-only after their controlled run reaches a terminal state.'
+        }
         const cwd = exec.agent?.session.header.cwd
         return typeof cwd === 'string' && cwd.length > 0
           ? candidatePathGuard(exec.arguments, cwd)
@@ -175,8 +190,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     })
   }
   ctx.on('session/created', refreshRouteLineage)
-  ctx.on('session/event', (_session, event) => {
+  ctx.on('session/event', (session, event) => {
     if (event.type === 'request/header') refreshRouteLineage()
+    if (event.type !== 'turn/start') return
+    if (String(session.id).startsWith('replay-')) return
+    const cwd = session.header.cwd
+    const turn = Number((event.data as { turn?: unknown } | undefined)?.turn)
+    if (typeof cwd !== 'string' || cwd.length === 0 || !Number.isSafeInteger(turn) || turn < 1) return
+    void workspaceProvider.checkpoint(cwd, 'turn-start').then(async checkpoint => {
+      turnCheckpoints.set(String(session.id), turn, checkpoint)
+      await store.put('turn-checkpoint', `${String(session.id)}-${turn}`, checkpoint)
+    }).catch(error => {
+      ctx.logger.warn('Replay Lab failed to capture pre-turn S0 for session %s turn %s: %s',
+        String(session.id), String(turn), error instanceof Error ? error.message : String(error))
+    })
   })
 
   if (config.fakeAdapter) ctx.llm.registerAdapter([config.provider], new DeterministicReplayAdapter())

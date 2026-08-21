@@ -68,6 +68,7 @@ describe('JsonArtifactStore replay history', () => {
     const directory = await mkdtemp(join(tmpdir(), 'rld-store-drift-'))
     const file = join(directory, 'state.json')
     const drift = { detected: true, frozenHash: 'a'.repeat(64), currentHash: 'b'.repeat(64) }
+    const checkpointHash = drift.currentHash
     const driftExperiment: ReplayExperiment = {
       ...experiment,
       candidate: {
@@ -77,6 +78,14 @@ describe('JsonArtifactStore replay history', () => {
           sourceCwd: '/workspace', sourceHash: drift.currentHash,
           executionCwd: '/artifacts/candidate/workspace', executionHash: drift.currentHash,
           isolation: 'copy', policy: 'test', drift,
+          checkpoint: {
+            schemaVersion: 'replay-workspace-checkpoint/v1',
+            checkpointCwd: '/artifacts/candidate/.replay-checkpoint', checkpointHash,
+            sourceHash: drift.currentHash, createdAt: '2026-08-15T00:00:30.000Z',
+          },
+          rollback: {
+            status: 'restored', restoredHash: checkpointHash, completedAt: '2026-08-15T00:01:00.000Z',
+          },
         },
       },
       scorecard: {
@@ -90,6 +99,8 @@ describe('JsonArtifactStore replay history', () => {
       }] })
       const loaded = await store.load()
       expect(loaded.history[0]?.experiment.candidate?.workspace?.drift).toEqual(drift)
+      expect(loaded.history[0]?.experiment.candidate?.workspace?.checkpoint).toMatchObject({ checkpointHash, sourceHash: drift.currentHash })
+      expect(loaded.history[0]?.experiment.candidate?.workspace?.rollback).toMatchObject({ status: 'restored', restoredHash: checkpointHash })
       expect(loaded.history[0]?.experiment.scorecard?.workspaceDrift).toEqual(drift)
     } finally {
       await rm(directory, { recursive: true, force: true })
