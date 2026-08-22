@@ -75,7 +75,17 @@ export function createHttpHandler(service: ReplayLabService) {
       if (req.method === 'POST' && path === 'summarize') {
         const value = await body(req)
         if (typeof value.experimentId !== 'string' || value.experimentId.length === 0) throw new Error('experimentId is required')
-        respond(res, 200, success(await service.summarize(value.experimentId, asSessionId(value)))); return
+        if (value.prompt !== undefined && typeof value.prompt !== 'string') throw new Error('prompt must be a string')
+        respond(res, 200, success(await service.summarize(value.experimentId, asSessionId(value), value.prompt))); return
+      }
+      if (req.method === 'POST' && path === 'render-dashboard') {
+        const value = await body(req)
+        if (typeof value.experimentId !== 'string' || value.experimentId.length === 0) throw new Error('experimentId is required')
+        const promptId = typeof value.promptId === 'string' ? value.promptId : undefined
+        if (value.prompt !== undefined && typeof value.prompt !== 'string') throw new Error('prompt must be a string')
+        respond(res, 200, success(await service.renderDashboard(
+          value.experimentId, asSessionId(value), promptId, value.prompt,
+        ))); return
       }
       if (req.method === 'POST' && path === 'abort') {
         respond(res, 200, success(await service.abort(asSessionId(await body(req))))); return

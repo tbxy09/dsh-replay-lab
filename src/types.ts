@@ -223,6 +223,25 @@ export interface EvidenceNarrative {
   error?: string
 }
 
+/**
+ * Model-generated dashboard fragment accepted through a strict XML contract.
+ * Numbers are never taken from this string; the client injects the host payload
+ * into a sandboxed, opaque-origin document at render time.
+ */
+export interface EvidenceDashboard {
+  schemaVersion: 'evidence-dashboard/v1'
+  status: 'completed' | 'failed' | 'unavailable'
+  promptVersion: 'evidence-dashboard-html/v1' | 'evidence-dashboard-html/v2'
+  promptId?: string
+  /** Exact editable visualization instruction sent to the model runtime. */
+  prompt?: string
+  provider: string
+  model: string
+  payloadHash: string
+  fragment?: string
+  error?: string
+}
+
 /** One distinct provider-bound request surface recovered from durable request/header events. */
 export interface RequestSurfaceEvidence {
   phase: string
@@ -385,6 +404,7 @@ export interface ReplayExperiment {
   scorecardMissingReason?: string
   callEvidenceComparison?: CallEvidenceComparison
   evidenceNarrative?: EvidenceNarrative
+  evidenceDashboard?: EvidenceDashboard
   error?: string
 }
 

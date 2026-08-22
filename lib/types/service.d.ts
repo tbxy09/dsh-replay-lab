@@ -35,7 +35,9 @@ export declare class ReplayLabService {
     abort(requestedSessionId?: string): Promise<LabSnapshot>;
     reset(requestedSessionId?: string): Promise<LabSnapshot>;
     /** Explicitly spend one direct model-runtime call to narrate retained raw evidence. */
-    summarize(experimentId: string, requestedSessionId?: string): Promise<LabSnapshot>;
+    summarize(experimentId: string, requestedSessionId?: string, prompt?: string): Promise<LabSnapshot>;
+    /** Explicit direct model-runtime generation; one bounded contract-repair retry is allowed. */
+    renderDashboard(experimentId: string, requestedSessionId?: string, promptId?: string, prompt?: string): Promise<LabSnapshot>;
     private execute;
     private requireVariant;
     private transition;

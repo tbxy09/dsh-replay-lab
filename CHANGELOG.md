@@ -4,6 +4,23 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## Unreleased
 
+## 0.1.4 - 2026-08-22
+
+### Added
+
+- Sandboxed Replay evidence dashboards: opaque-origin iframe, host-injected
+  numbers, prompt presets, freeform Send, and a Prompt-in-flight overlay.
+- README demos for preset redraws, a freeform metric table, and a
+  numbered-capsule playhead maze. The maze is a sandbox demo, not the expected
+  Replay evidence view.
+- Redacted Discussion #3229 quarantine fixtures under `tests/fixtures`.
+
+### Changed
+
+- README opens with a note that fancy dashboards are educational; professional
+  debug, replay, and case design still run through text, tables, sequence
+  diagrams, and multi-turn discovery.
+
 ## 0.1.3 - 2026-08-19
 
 ### Changed

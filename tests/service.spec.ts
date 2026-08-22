@@ -80,6 +80,7 @@ describe('ReplayLabService', () => {
   it('keeps the observed turn fixed and runs only the approved candidate', async () => {
     let runs = 0
     let summaries = 0
+    let dashboards = 0
     const runner: Runner = {
       id: 'runner',
       async run({ variant }): Promise<RunEvidence> {
@@ -101,6 +102,15 @@ describe('ReplayLabService', () => {
           text: 'candidate retry increased [F2].', citedEvidenceIds: ['F2'],
         }
       },
+      async renderDashboard(input) {
+        dashboards += 1
+        return {
+          schemaVersion: 'evidence-dashboard/v1', status: 'completed', promptVersion: 'evidence-dashboard-html/v1',
+          promptId: input.promptId, provider: input.replayCase.provider, model: input.replayCase.model, payloadHash: 'payload',
+          prompt: input.prompt,
+          fragment: '<div><script>window.__EVIDENCE__.turn</script></div>',
+        }
+      },
     }
     const service = makeService(caseSource(), runner, undefined, new MemoryStore(), summarizer)
     await service.freeze('source')
@@ -119,19 +129,29 @@ describe('ReplayLabService', () => {
     expect(experiment.callEvidenceComparison).toBeDefined()
     expect(experiment.evidenceNarrative).toMatchObject({ status: 'unavailable', error: expect.stringMatching(/not requested/) })
     expect(summaries).toBe(0)
+    expect(dashboards).toBe(0)
     await service.summarize(experiment.id)
     const summarized = (await service.snapshot()).experiment!
     expect(summarized.evidenceNarrative).toMatchObject({ status: 'completed', citedEvidenceIds: ['F2'] })
     expect(summaries).toBe(1)
+    await service.renderDashboard(experiment.id, undefined, 'focus-selected', 'Show the selected run with an editable QA caption.')
+    const visualized = (await service.snapshot()).experiment!
+    expect(visualized.evidenceDashboard).toMatchObject({
+      status: 'completed', promptVersion: 'evidence-dashboard-html/v1', promptId: 'focus-selected',
+      prompt: 'Show the selected run with an editable QA caption.',
+    })
+    expect(dashboards).toBe(1)
+    await expect(service.renderDashboard(experiment.id, undefined, 'not-a-prompt')).rejects.toThrow(/unknown dashboard prompt/)
+    await expect(service.renderDashboard(experiment.id, undefined, 'focus-selected', '   ')).rejects.toThrow(/must not be empty/)
     expect((await service.snapshot()).history).toEqual([expect.objectContaining({
-      sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment: summarized,
+      sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment: visualized,
     })])
 
     const afterBack = await service.reset()
     expect(afterBack.experiment).toBeUndefined()
     expect(afterBack.replayCase).toBeUndefined()
     expect(afterBack.history).toEqual([expect.objectContaining({
-      sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment: summarized,
+      sourceSessionId: 'source-session', sourceTurn: 1, replayCase, experiment: visualized,
     })])
   })
 

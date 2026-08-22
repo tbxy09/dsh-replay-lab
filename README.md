@@ -1,12 +1,5 @@
 English | [简体中文](./README.zh-CN.md)
 
-![Complete Replay Lab result showing workspace provenance, all-run metrics, request-surface and execution deltas, the explicit evidence summarizer, and downloadable raw evidence](./assets/replay-run-detail.png)
-
-*Complete Replay result. **Summarize raw evidence** is an explicit, one-shot
-direct model-runtime call—no agent is started. Its generated narrative and
-cited evidence IDs are retained with the durable run evidence; this is not
-shared agent or cross-session memory.*
-
 # DSH Replay Lab (ReplayLab)
 
 **DSH Replay Lab is a DeepSeek Harness plugin for request-surface replay and A/B
@@ -14,6 +7,23 @@ experiments: freeze a turn, isolate the candidate session, and compare request
 surfaces, trajectories, and cost.**
 
 **Replay the request surface, not just the prompt.**
+
+> [!NOTE]
+> A fancy dashboard on Replay Lab is a bit of entertainment and education: it
+> shows what the sandbox can draw. When I am actually learning, thinking, or
+> discussing a concept, text is faster—especially structured text. Professional
+> debug, replay, and trace work, and designing cases and data, still go fastest
+> with AI through many rounds of conversation and discovery. Tables are the most
+> direct. Sequence diagrams are also fast and clear. Other fancy UI almost never
+> shows up in real work.
+>
+> Multimodal media is unlikely to become a thinking script. The script for
+> thought is still language, or a denser language. Mathematics already is that
+> kind of high-density language: it already serves as a thinking script. Even
+> so, its combinatorial freedom is boxed in by too many external dependencies,
+> so entropy does not flow smoothly. Multimedia is sparser still: pixels and
+> frames carry far less recombinable information than a paragraph you can
+> revise, cite, and keep pushing forward.
 
 `dsh-replay-lab` is a DeepSeek Harness plugin for replaying completed agent
 turns against different presets or plugins and comparing their request surfaces,
@@ -33,6 +43,92 @@ while durable session events and comparison evidence remain available.
 
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
+
+## Sandboxed evidence dashboard
+
+Open a retained replay, pick a prompt preset **or type any prompt**, then
+**Send**. The model returns HTML into an opaque-origin iframe; every number is
+host-injected from the replay payload. Presets are starters. You can ask for a
+radar, callouts, a diff, a table, or any other visualization the payload can
+support. Invalid HTML falls back to the host chart.
+
+The GIF shows **Send**, the **Prompt in flight** overlay, then the redraw
+(Execution delta → Request surface diff).
+
+![Animated Send, Prompt in flight overlay, then sandboxed redraw](./assets/replay-lab-demo.gif)
+
+**Any prompt, not only presets.** This session (`Generate table UI` → Replay →
+Turn 1 · Minimal) asked for a compact metric table instead of a chart. The
+iframe rendered Metric / Baseline / Candidate / Delta with host-injected
+numbers and highlighted the largest absolute delta.
+
+![Freeform table UI generated from this session's Replay sandbox](./assets/replay-dashboard-table.png)
+
+**Custom numbered-capsule maze.** Same Replay surface, no preset chip: **Send** a
+dual-lane playhead prompt, wait through **Prompt in flight**, then looping
+capsule playback (baseline blue / candidate gold, clip-fill from the left,
+host-injected `stepCount` / `toolCalls` / `durationMs`). A maze is **not** the
+expected Replay evidence view. Expected Replay is the presets below (overlay,
+deltas, request surface, execution scorecard, cited sentence) or a compact
+table of host-injected numbers. This GIF only shows that an arbitrary custom
+prompt still Sends into the sandbox.
+
+![Custom prompt, Prompt in flight, then numbered-capsule playhead maze](./assets/replay-lab-maze-trace.gif)
+
+| Preset | What Send redraws |
+| --- | --- |
+| Overlay all runs | One series per retained run |
+| Focus selected | Layout around the Saved-runs selection versus baseline |
+| Metric deltas | Largest absolute deltas; no invented causes |
+| Request surface diff | Route, phase, tools, hashes |
+| Execution delta | Scorecard baseline / candidate / delta |
+| Summarize as sentence | One cited Chinese sentence, not a chart |
+
+**Request surface diff** — route matches `deepseek-official / deepseek-v4-flash`;
+phase, system hash, and tool list still differ.
+
+![Sandboxed request-surface comparison inside the opaque iframe](./assets/replay-dashboard-surface.png)
+
+**Why Execution delta?** On this Standard replay the candidate used +132 fresh
+input tokens, +9,344 cache-read tokens, +1.3 s, and +1 tool call versus the
+observed baseline. Those are execution measurements, not a capability score.
+
+![Generated Execution delta dashboard for the retained Standard replay](./assets/replay-dashboard-execution.png)
+
+## Replay evidence, one function at a time
+
+**1. Workspace isolation and retained run**
+
+![Workspace drift and retained isolated replay status](./assets/replay-workspace-isolation.png)
+
+Source advanced from the pre-turn S0 without being reverted; the isolated
+candidate run and its evidence remain retained.
+
+**2. Baseline-versus-candidate run metrics**
+
+![Observed baseline and isolated candidate execution metrics](./assets/replay-run-metrics.png)
+
+**3. Request-surface differences**
+
+![Request-surface differences between observed baseline and isolated candidate](./assets/replay-request-surface.png)
+
+Provider/model, request phases, and durable request hashes are compared
+independently of execution cost.
+
+**4. Candidate-minus-baseline execution delta**
+
+![Candidate-minus-baseline token, duration, step, and tool-call deltas](./assets/replay-execution-delta.png)
+
+Tokens, duration, steps, and tool calls describe observed activity—not outcome
+quality.
+
+**5. Generated evidence narrative**
+
+![Generated evidence narrative with cited retained facts](./assets/replay-evidence-summary.png)
+
+The narrative comes from an explicit, one-shot direct model-runtime call—no
+agent is started. Its cited evidence IDs and raw evidence remain with the
+durable run; this is not shared agent or cross-session memory.
 
 <details>
 <summary><h2>Why Replay Lab exists</h2></summary>
@@ -361,16 +457,16 @@ These phrases are trajectory descriptors, not ability measurements.
 ## Install
 
 Requires DeepSeek Harness `0.1.0-rc.6`, Node.js 22.19+ or 24+, and pnpm.
-Install the pinned `v0.1.3` organization package from npm:
+Install the pinned `v0.1.4` organization package from npm:
 
 ```sh
-dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.3
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.4
 ```
 
 The matching immutable GitHub source tag is also available:
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.3
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.4
 ```
 
 Restart the Web profile after installation:

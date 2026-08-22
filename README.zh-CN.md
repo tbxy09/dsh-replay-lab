@@ -1,16 +1,17 @@
 [English](./README.md) | 简体中文
 
-![完整 Replay Lab 结果：展示 workspace provenance、全部运行指标、请求面与执行差异、显式证据总结器和可下载原始证据](./assets/replay-run-detail.png)
-
-*完整 Replay 结果区。**Summarize raw evidence** 是一次显式触发的直接
-model-runtime 调用，不会启动 Agent。生成的 narrative 和 cited evidence IDs 会随
-持久 run evidence 一起保留；它不是跨 Agent 或跨 session 共享的长期 memory。*
-
 # DSH Replay Lab（ReplayLab）
 
 **DSH Replay Lab - DeepSeek Harness 请求面重放与 A/B 实验插件：冻结 turn、隔离候选 session、对比 Request Surface/轨迹/成本**
 
 **回放请求面，而不只是提示词。**
+
+> [!NOTE] 给 Replay 加一块 fancy dashboard，我觉得偏娱乐和教育：用来展示沙箱能画什么。 真正在了解、思考、交流概念时，文字更快——尤其是结构化的文字。专业做 debug / replay / trace、设计 case 和数据，靠 AI 提速的办法仍是多轮对话去 discovery。 表格最直观；时序图也快、也清楚。其余太 fancy 的 UI，真实工作里基本不会用。
+>
+> 多模态很难成为思维脚本。思维脚本还是语言，或智能密度更高的语言。数学已经是
+> 这类高密度语言，也已经在当思维脚本用。即便如此，组合自由度仍被外部依赖卡得
+> 太死，entropy flow 不顺畅。多媒体更稀疏：像素和帧能重组的信息，远少于一段能
+> 改、能引、能接着往下推的文字。
 
 `dsh-replay-lab` 是一个 DeepSeek Harness 插件，可使用不同 preset 或
 plugin 重新运行已完成的 Agent turn，并比较它们的请求面、轨迹、成本、错误和结果。
@@ -26,11 +27,93 @@ session 事件与对比证据。
 [安装](#安装) · [验证](#验证) · [安全](./SECURITY.md) ·
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
-[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
-<details>
-<summary><h2>为什么需要 Replay Lab</h2></summary>
+## 沙箱证据仪表盘
+
+打开一次已保留的 replay，选中 prompt preset **或自己写任意 prompt**，再点 **Send**。
+模型返回的 HTML 进入 opaque-origin iframe；所有数字都由 host 从 replay payload
+注入。Preset 只是起点：雷达、callout、diff、表格，或 payload 能支撑的任何图都可以要。
+非法 HTML 会回退到 host 图表。
+
+动图包含 **Send**、**Prompt in flight** 预检层，然后重绘（Execution delta →
+Request surface diff）。
+
+![Send、Prompt in flight 预检层，然后沙箱重绘](./assets/replay-lab-demo.gif)
+
+**不限于 preset。** 本 session（`Generate table UI` → Replay → Turn 1 · Minimal）
+没有要图表，而是要一张 Metric / Baseline / Candidate / Delta 对照表。iframe 用
+host 注入的数字渲染，并高亮最大绝对值 delta。
+
+![本 session Replay 沙箱生成的自由表格 UI](./assets/replay-dashboard-table.png)
+
+**自定义编号胶囊迷宫。** 同一块 Replay 表面，不点 preset：**Send** 双泳道播放头
+prompt，经过 **Prompt in flight**，然后循环播放胶囊（baseline 蓝 / candidate 金，
+从左 clip-fill；步数、工具次数、时长来自 host 注入的 `stepCount` / `toolCalls` /
+`durationMs`）。迷宫**不是** Replay 预期的证据视图。预期视图是下面的 preset
+（overlay、deltas、request surface、execution scorecard、带引用的句子），或
+host 注入数字的对照表。这张动图只说明任意自定义 prompt 仍能 Send 进沙箱。
+
+![自定义 prompt、Prompt in flight，然后编号胶囊播放头迷宫](./assets/replay-lab-maze-trace.gif)
+
+
+| Preset                | Send 后重绘什么                               |
+| --------------------- | ---------------------------------------- |
+| Overlay all runs      | 每个保留 run 一条序列                            |
+| Focus selected        | 围绕 Saved-runs 选中项 vs baseline 排版         |
+| Metric deltas         | 最大绝对值 delta，不发明原因                        |
+| Request surface diff  | Route、phase、tools、hash                   |
+| Execution delta       | Scorecard 的 baseline / candidate / delta |
+| Summarize as sentence | 一句带引用的中文，不是图表                            |
+
+
+**Request surface diff** — route 同为 `deepseek-official / deepseek-v4-flash`；
+phase、system hash 和工具列表仍不同。
+
+![沙箱 iframe 中的 Request Surface 对比](./assets/replay-dashboard-surface.png)
+
+**为什么选择 Execution delta？** 这次 Standard replay 相对 observed baseline：
+fresh input +132、cache-read +9,344、耗时 +1.3 s、工具调用多 1 次。这些是执行
+指标，不是能力评分。
+
+![保留的 Standard replay 的 Execution delta 仪表盘](./assets/replay-dashboard-execution.png)
+
+## Replay 证据：每张图只说明一个功能
+
+**1. Workspace 隔离与持久运行**
+
+![Workspace drift 和保留的隔离 replay 状态](./assets/replay-workspace-isolation.png)
+
+Source 从 turn 开始前的 S0 继续演进且没有被回滚；隔离 candidate 的运行与证据会保留。
+
+**2. Baseline 与 candidate 运行指标**
+
+![Observed baseline 与隔离 candidate 的执行指标](./assets/replay-run-metrics.png)
+
+**3. Request Surface 差异**
+
+![Observed baseline 与隔离 candidate 的 Request Surface 差异](./assets/replay-request-surface.png)
+
+Provider/model、请求阶段和持久 request hash 与执行成本分开比较。
+
+**4. Candidate 减 baseline 的执行差异**
+
+![Candidate 减 baseline 的 token、耗时、step 和工具调用差异](./assets/replay-execution-delta.png)
+
+Token、耗时、step 和工具调用只描述已观测活动，不代表结果质量。
+
+**5. 已生成的证据 narrative**
+
+![已生成的证据 narrative 和引用的持久事实](./assets/replay-evidence-summary.png)
+
+Narrative 来自一次显式触发的直接 model-runtime 调用，不会启动 Agent。引用的
+evidence IDs 和 raw evidence 会随持久 run 保留；它不是跨 Agent 或跨 session
+共享的长期 memory。
+
+## 为什么需要 Replay Lab
+
+
 
 ### 问：最初观察到的问题是什么？
 
@@ -90,11 +173,13 @@ Replay Lab 的目的，是研究这个组合，而不是假装一次比较已经
 
 它也揭示了 DSH 中一个实际的权衡：
 
-| 方案 | 请求面策略 | 权衡 |
-| --- | --- | --- |
-| **Minimal** | 以较小的 persona 和工具面开始 | 缩小首个请求的请求面，但也缺少更广泛的 DSH 能力 |
-| **Standard** | 一开始就暴露更完整的 DSH 请求面 | 保留完整能力集，但部分已观测运行更长或更偏探索 |
+
+| 方案                    | 请求面策略                        | 权衡                                |
+| --------------------- | ---------------------------- | --------------------------------- |
+| **Minimal**           | 以较小的 persona 和工具面开始          | 缩小首个请求的请求面，但也缺少更广泛的 DSH 能力        |
+| **Standard**          | 一开始就暴露更完整的 DSH 请求面           | 保留完整能力集，但部分已观测运行更长或更偏探索           |
 | **Anchored Standard** | 先使用类似 Minimal 的请求面，再恢复更广泛的能力 | 保留分阶段暴露假设，但引入 promotion 时机及其他实现变量 |
+
 
 随后出现的
 [Anchored Standard](https://github.com/xiaobright/dsh-anchored-standard)
@@ -280,8 +365,6 @@ Replay Lab 无法通过一次 rerun 证明：
 目标不是把一个 workaround 变成普遍理论，而是让 Model × Harness 比较变得更窄、
 可重复、具备 provenance，并诚实说明现有证据究竟能够证明什么。
 
-</details>
-
 ## 功能
 
 ```text
@@ -296,17 +379,19 @@ Replay Lab 无法通过一次 rerun 证明：
 - 在每个 session 的 Conversation 和 Trajectory 旁增加一个 **Replay** 标签页。
 - 使用持久化 session projection 构建行，而不是依赖分页聊天节点。
 - 冻结 prompt、workspace hash、model、reasoning、max tokens、preset/plugin 请求面、
-  system hash 和 tool-schema hash。
+system hash 和 tool-schema hash。
 - host event 到达时捕获实时 turn-start workspace 状态；保持已观测的源 turn 不变，
-  只有候选项会执行。
+只有候选项会执行。
 - 在经过验证的 workspace 副本中运行候选项，并使用路径包含性保护；源 session 和
-  源 workspace 永远不会被重写或回滚。
+源 workspace 永远不会被重写或回滚。
 - 在终态边界恢复候选文件，同时保留持久事件、checkpoint hash、provenance 和对比证据。
 - host 重启后恢复带 checkpoint 的持久候选 workspace；当源/候选边界不分离时拒绝 cleanup。
 - 历史 turn-start checkpoint 不可用时，退回为带 provenance 标记的当前状态隔离
-  checkpoint；这不是严格的 S0 replay。
+checkpoint；这不是严格的 S0 replay。
 - 只使用独立记录的证据生成评分卡。
 - 拒绝不受支持的 host-plane 变更和不完整变体。
+
+
 
 ## Replay 证据
 
@@ -316,27 +401,27 @@ Replay Lab 无法通过一次 rerun 证明：
 
 ![Anchored Standard session chat：thinking 行中真实的 Let's 和 We 已被框出](./assets/replay-thinking-anchored.png)
 
-*Anchored Standard：实际出现的 `let's` 和 `we`。*
+*Anchored Standard：实际出现的* `let's` *和* `we`*。*
 
 ![Standard replay session chat：thinking 行中真实的 Let me 已被框出](./assets/replay-thinking-standard.png)
 
-*Standard replay：实际出现的 `let me`。*
+*Standard replay：实际出现的* `let me`*。*
 
 这些短语是轨迹描述符，不是能力指标。
 
 ## 安装
 
 需要 DeepSeek Harness `0.1.0-rc.6`、Node.js 22.19+ 或 24+，以及 pnpm。
-从 npm 安装固定版本 `v0.1.3` 的组织包：
+从 npm 安装固定版本 `v0.1.4` 的组织包：
 
 ```sh
-dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.3
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.4
 ```
 
 也可以使用相同版本的不可变 GitHub 源码 tag：
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.3
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.4
 ```
 
 安装后重启 Web profile：

@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "source-session-audit/v1",
+  "caseId": "dsh-3229-runaway-pwsh",
+  "classification": {
+    "role": "source-session",
+    "baselineEligibility": "quarantined",
+    "isCandidate": false,
+    "candidateDefinition": "A separately executed bounded preset/plugin run against an eligible frozen source turn.",
+    "reasonCodes": [
+      "source-turn-not-finalized",
+      "source-workspace-snapshot-missing",
+      "preset-event-missing",
+      "foreign-cwd-not-portable"
+    ]
+  },
+  "storage": {
+    "declaredFilename": "session.json",
+    "actualEncoding": "jsonl",
+    "headerRows": 1,
+    "storageRecordRows": 13276,
+    "packedRows": {
+      "reasoning-chunks": 5523,
+      "text-chunks": 9,
+      "tool-call-chunks": 1831
+    },
+    "sessionFormatVersion": 0,
+    "installedSessionFormatVersion": 0,
+    "decodedEventCount": 254380
+  },
+  "sequence": {
+    "firstSeq": 0,
+    "lastSeq": 254379,
+    "contiguousAfterOfficialDecode": true,
+    "duplicateSeqCount": 0,
+    "fileOrderRegressionCount": 0,
+    "materializedSeqRows": 5913,
+    "packedSeq0Rows": 7363
+  },
+  "time": {
+    "sessionCreatedAt": "2026-08-19T00:31:24.756Z",
+    "firstDurableEventAt": "2026-08-19T00:31:24.767Z",
+    "turnStartedAt": "2026-08-19T00:34:52.933Z",
+    "lastDurableEventAt": "2026-08-19T01:08:11.223Z",
+    "durableSpanMs": 2206456,
+    "openTurnSpanMs": 1998290,
+    "durableTimeRegressionCount": 0
+  },
+  "events": {
+    "turn/start": 1,
+    "turn/end": 0,
+    "step/start": 312,
+    "step/end": 311,
+    "assistant/message": 311,
+    "tool/call": 621,
+    "tool/result": 621,
+    "request/header": 1,
+    "request/context": 1,
+    "user/message": 4
+  },
+  "turnBoundary": {
+    "sourceCompletedTurnCount": 0,
+    "openTurn": 1,
+    "openStep": 312,
+    "lastDurableEventType": "assistant/chunk",
+    "officialRepairWouldAdd": [
+      "step/end",
+      "turn/end:interrupted"
+    ],
+    "repairBoundaryIsSourceEvidence": false
+  },
+  "request": {
+    "headerSeq": 19,
+    "requiredConfigFieldsPresent": {
+      "provider": true,
+      "model": true,
+      "reasoningEffort": true,
+      "maxTokens": true
+    },
+    "systemBytes": 17780,
+    "toolSchemaCount": 32,
+    "sessionHeaderPresetPresent": true,
+    "agentPresetSelectedEventCount": 0
+  },
+  "toolEvidence": {
+    "callResultPairsComplete": true,
+    "orphanCallCount": 0,
+    "orphanResultCount": 0,
+    "reportedErrorResultCount": 0,
+    "pwshCallCount": 617,
+    "pwshUniqueArgumentCount": 11,
+    "pwshTopIdenticalArgumentCounts": [
+      304,
+      304
+    ],
+    "stepsWithTwoPwshCalls": 306,
+    "stepsWithOnePwshCall": 5
+  },
+  "usage": {
+    "assistantMessagesWithNumericUsage": 311,
+    "freshInputTokens": 88579,
+    "outputTokens": 271384,
+    "cacheReadTokens": 57112960,
+    "reasoningTokens": 200014,
+    "providerPriceOrSpendPresent": false
+  },
+  "workspace": {
+    "headerCwdPresent": true,
+    "cwdValueRetained": false,
+    "workspaceSnapshotPresent": false,
+    "workspaceHashPresent": false,
+    "rawRestoreOnCurrentPosixHost": "rejected-foreign-windows-cwd",
+    "eventRestoreWithoutForeignCwd": "validated"
+  },
+  "replayLabProjection": {
+    "stateVersion": 3,
+    "finalizedTurnCount": 0,
+    "openTurnStepCount": 312,
+    "openTurnToolCallCount": 621,
+    "requestEvidencePresent": true,
+    "presetSurface": null
+  },
+  "sensitivity": {
+    "rawContentIncluded": false,
+    "sessionCwdOccurrences": 1,
+    "distinctUserPathSegments": 1,
+    "userPathSegmentOccurrences": 310,
+    "distinctUrlStrings": 3,
+    "urlOccurrences": 1528,
+    "distinctUrlHosts": 1,
+    "emailOccurrences": 0,
+    "knownCredentialPatternMatches": 0,
+    "credentialScanPatterns": [
+      "private-key-pem",
+      "jwt",
+      "aws-access-key",
+      "github-token",
+      "slack-token",
+      "openai-like-token",
+      "bearer-token",
+      "credential-uri",
+      "generic-credential-assignment"
+    ]
+  },
+  "redaction": {
+    "policyVersion": "dsh-source-session-redaction/v1",
+    "deterministic": true,
+    "retained": [
+      "event type and count",
+      "sequence and timestamp integrity facts",
+      "numeric usage totals",
+      "boolean field presence",
+      "non-sensitive tool names and aggregate repetition counts"
+    ],
+    "removed": [
+      "cwd and usernames",
+      "session, message, command, and tool-call identifiers",
+      "system and user prompts",
+      "assistant reasoning and text",
+      "tool arguments and results",
+      "server URLs and hosts"
+    ],
+    "correlationPolicy": "Sensitive values are represented only by counts and first-seen ordinals in any derived fixture; no per-value digest is published.",
+    "rawSourceDigestStoredSeparately": true
+  }
+}

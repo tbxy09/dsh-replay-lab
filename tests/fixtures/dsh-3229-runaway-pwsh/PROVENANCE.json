@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "source-session-provenance/v1",
+  "caseId": "dsh-3229-runaway-pwsh",
+  "source": {
+    "discussionUrl": "https://github.com/deepseek-ai/deepseek-harness/discussions/3229",
+    "attachmentUrl": "https://github.com/user-attachments/files/31203691/session.json",
+    "declaredFilename": "session.json",
+    "fetchedOn": "2026-08-18",
+    "publicAttachment": true,
+    "byteCount": 8621683,
+    "lineCount": 13277,
+    "sha256": "e535f0e508158eece6206eb00a3b647042f2d59732692988ad08a85679c5d38d"
+  },
+  "handling": {
+    "rawCommitted": false,
+    "rawPackaged": false,
+    "rawPreservedLocally": true,
+    "rawLocalLocation": ".tmp/dsh-3229-source/session.json",
+    "rawCommandsExecuted": false,
+    "externalSystemsChanged": false,
+    "redactionPolicy": "dsh-source-session-redaction/v1"
+  },
+  "derivedEvidence": {
+    "path": "tests/fixtures/dsh-3229-runaway-pwsh/evidence.json",
+    "byteCount": 4668,
+    "sha256": "e40704d27c606ab266c9442248482d009392dc9ca83c0862ad0cd19d8edf7ead"
+  }
+}
