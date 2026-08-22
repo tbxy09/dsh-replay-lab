@@ -4,6 +4,13 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## Unreleased
 
+## 0.1.5 - 2026-08-22
+
+### Changed
+
+- Cut the GitHub source tag from `main` after merging #9. `v0.1.4` tagged the
+  PR branch tip before that merge.
+
 ## 0.1.4 - 2026-08-22
 
 ### Added

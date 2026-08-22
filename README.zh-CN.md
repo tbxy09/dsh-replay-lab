@@ -412,16 +412,16 @@ checkpoint；这不是严格的 S0 replay。
 ## 安装
 
 需要 DeepSeek Harness `0.1.0-rc.6`、Node.js 22.19+ 或 24+，以及 pnpm。
-从 npm 安装固定版本 `v0.1.4` 的组织包：
+从 npm 安装固定版本 `v0.1.5` 的组织包：
 
 ```sh
-dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.4
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.5
 ```
 
 也可以使用相同版本的不可变 GitHub 源码 tag：
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.4
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.5
 ```
 
 安装后重启 Web profile：

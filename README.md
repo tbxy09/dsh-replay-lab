@@ -457,16 +457,16 @@ These phrases are trajectory descriptors, not ability measurements.
 ## Install
 
 Requires DeepSeek Harness `0.1.0-rc.6`, Node.js 22.19+ or 24+, and pnpm.
-Install the pinned `v0.1.4` organization package from npm:
+Install the pinned `v0.1.5` organization package from npm:
 
 ```sh
-dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.4
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.5
 ```
 
 The matching immutable GitHub source tag is also available:
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.4
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.5
 ```
 
 Restart the Web profile after installation:
