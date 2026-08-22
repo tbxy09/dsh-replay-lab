@@ -50,13 +50,12 @@ numbers and highlighted the largest absolute delta.
 **Custom maze-garden TRACE.** Same Replay surface, no preset chip: type a hedge-maze
 prompt, **Send**, wait through **Prompt in flight**, then a looping path playback
 (baseline cyan / candidate gold, host-injected `stepCount` / `toolCalls` /
-`durationMs`). This is a freeform iframe visualization, not the numbered Live Maze
-tab from [dsh-trace-compare](https://github.com/lamost423/dsh-trace-compare)
-(`S15·47` capsules, detours, backtracks).
+`durationMs`). A maze is **not** the expected Replay evidence view. Expected
+Replay is the presets below (overlay, deltas, request surface, execution
+scorecard, cited sentence) or a compact table of host-injected numbers. This
+GIF only shows that an arbitrary custom prompt still Sends into the sandbox.
 
 ![Typing a custom maze-garden prompt, Send, Prompt in flight, then TRACE playback](./assets/replay-lab-maze-trace.gif)
-
-![Maze-garden TRACE playback from the custom prompt](./assets/replay-dashboard-maze-trace.png)
 
 | Preset | What Send redraws |
 | --- | --- |

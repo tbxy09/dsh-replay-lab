@@ -44,13 +44,11 @@ host 注入的数字渲染，并高亮最大绝对值 delta。
 **自定义迷宫花园 TRACE。** 同一块 Replay 表面，不点 preset：手打绿篱迷宫 prompt，
 **Send**，经过 **Prompt in flight**，然后循环播放路径（baseline 冷青 /
 candidate 暖金；格子数、分叉、路径长来自 host 注入的 `stepCount` / `toolCalls` /
-`durationMs`）。这是 Replay iframe 的自由可视化，不是
-[dsh-trace-compare](https://github.com/lamost423/dsh-trace-compare) 的数字实时迷宫
-页签（`S15·47` 胶囊条、支路、折返）。
+`durationMs`）。迷宫**不是** Replay 预期的证据视图。预期视图是下面的 preset
+（overlay、deltas、request surface、execution scorecard、带引用的句子），或
+host 注入数字的对照表。这张动图只说明任意自定义 prompt 仍能 Send 进沙箱。
 
 ![手打迷宫花园 prompt、Send、Prompt in flight，然后 TRACE 回放](./assets/replay-lab-maze-trace.gif)
-
-![迷宫花园 TRACE 回放（自定义 prompt）](./assets/replay-dashboard-maze-trace.png)
 
 
 | Preset                | Send 后重绘什么                               |
