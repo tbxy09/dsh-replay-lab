@@ -8,6 +8,23 @@ surfaces, trajectories, and cost.**
 
 **Replay the request surface, not just the prompt.**
 
+> [!NOTE]
+> A fancy dashboard on Replay Lab is a bit of entertainment and education: it
+> shows what the sandbox can draw. When I am actually learning, thinking, or
+> discussing a concept, text is faster—especially structured text. Professional
+> debug, replay, and trace work, and designing cases and data, still go fastest
+> with AI through many rounds of conversation and discovery. Tables are the most
+> direct. Sequence diagrams are also fast and clear. Other fancy UI almost never
+> shows up in real work.
+>
+> Multimodal media is unlikely to become a thinking script. The script for
+> thought is still language, or a denser language. Mathematics already is that
+> kind of high-density language: it already serves as a thinking script. Even
+> so, its combinatorial freedom is boxed in by too many external dependencies,
+> so entropy does not flow smoothly. Multimedia is sparser still: pixels and
+> frames carry far less recombinable information than a paragraph you can
+> revise, cite, and keep pushing forward.
+
 `dsh-replay-lab` is a DeepSeek Harness plugin for replaying completed agent
 turns against different presets or plugins and comparing their request surfaces,
 trajectories, costs, errors, and outcomes.
