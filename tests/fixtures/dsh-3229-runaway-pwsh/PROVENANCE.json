@@ -21,7 +21,7 @@
     "redactionPolicy": "dsh-source-session-redaction/v1"
   },
   "derivedEvidence": {
-    "path": "artifacts/fixture-packets/dsh-3229-runaway-pwsh/evidence.json",
+    "path": "tests/fixtures/dsh-3229-runaway-pwsh/evidence.json",
     "byteCount": 4668,
     "sha256": "e40704d27c606ab266c9442248482d009392dc9ca83c0862ad0cd19d8edf7ead"
   }

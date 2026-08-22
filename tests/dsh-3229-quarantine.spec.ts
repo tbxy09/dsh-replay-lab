@@ -6,7 +6,7 @@ import { interruptedTurnClosers, type SessionEvent } from '@deepseek-ai/dsh-sess
 import { replayTurnsProjectionDefinition as projection } from '../src/replay-turn-projection.ts'
 
 const evidencePath = fileURLToPath(new URL(
-  '../artifacts/fixture-packets/dsh-3229-runaway-pwsh/evidence.json',
+  './fixtures/dsh-3229-runaway-pwsh/evidence.json',
   import.meta.url,
 ))
 const evidence = JSON.parse(readFileSync(evidencePath, 'utf8')) as {
@@ -16,7 +16,7 @@ const evidence = JSON.parse(readFileSync(evidencePath, 'utf8')) as {
   sensitivity: { rawContentIncluded: boolean; knownCredentialPatternMatches: number }
 }
 const provenance = JSON.parse(readFileSync(fileURLToPath(new URL(
-  '../artifacts/fixture-packets/dsh-3229-runaway-pwsh/PROVENANCE.json',
+  './fixtures/dsh-3229-runaway-pwsh/PROVENANCE.json',
   import.meta.url,
 )), 'utf8')) as {
   source: { sha256: string }
