@@ -6,11 +6,7 @@
 
 **回放请求面，而不只是提示词。**
 
-> [!NOTE]
-> 给 Replay 加一块 fancy dashboard，我觉得偏娱乐和教育：用来展示沙箱能画什么。
-> 真正在了解、思考、交流概念时，文字更快——尤其是结构化的文字。专业做 debug /
-> replay / trace、设计 case 和数据，靠 AI 提速的办法仍是多轮对话去 discovery。
-> 表格最直观；时序图也快、也清楚。其余太 fancy 的 UI，真实工作里基本不会用。
+> [!NOTE] 给 Replay 加一块 fancy dashboard，我觉得偏娱乐和教育：用来展示沙箱能画什么。 真正在了解、思考、交流概念时，文字更快——尤其是结构化的文字。专业做 debug / replay / trace、设计 case 和数据，靠 AI 提速的办法仍是多轮对话去 discovery。 表格最直观；时序图也快、也清楚。其余太 fancy 的 UI，真实工作里基本不会用。
 >
 > 多模态很难成为思维脚本。思维脚本还是语言，或智能密度更高的语言。数学已经是
 > 这类高密度语言，也已经在当思维脚本用。即便如此，组合自由度仍被外部依赖卡得
@@ -31,7 +27,7 @@ session 事件与对比证据。
 [安装](#安装) · [验证](#验证) · [安全](./SECURITY.md) ·
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
-[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
 ## 沙箱证据仪表盘
@@ -116,6 +112,8 @@ evidence IDs 和 raw evidence 会随持久 run 保留；它不是跨 Agent 或�
 共享的长期 memory。
 
 ## 为什么需要 Replay Lab
+
+
 
 ### 问：最初观察到的问题是什么？
 
@@ -367,8 +365,6 @@ Replay Lab 无法通过一次 rerun 证明：
 目标不是把一个 workaround 变成普遍理论，而是让 Model × Harness 比较变得更窄、
 可重复、具备 provenance，并诚实说明现有证据究竟能够证明什么。
 
-
-
 ## 功能
 
 ```text
@@ -395,6 +391,8 @@ checkpoint；这不是严格的 S0 replay。
 - 只使用独立记录的证据生成评分卡。
 - 拒绝不受支持的 host-plane 变更和不完整变体。
 
+
+
 ## Replay 证据
 
 顶部的运行详情截图比较观察基线与每个已保存的回放运行。每项指标独立缩放，并保留
@@ -403,27 +401,27 @@ checkpoint；这不是严格的 S0 replay。
 
 ![Anchored Standard session chat：thinking 行中真实的 Let's 和 We 已被框出](./assets/replay-thinking-anchored.png)
 
-*Anchored Standard：实际出现的 `let's` 和 `we`。*
+*Anchored Standard：实际出现的* `let's` *和* `we`*。*
 
 ![Standard replay session chat：thinking 行中真实的 Let me 已被框出](./assets/replay-thinking-standard.png)
 
-*Standard replay：实际出现的 `let me`。*
+*Standard replay：实际出现的* `let me`*。*
 
 这些短语是轨迹描述符，不是能力指标。
 
 ## 安装
 
 需要 DeepSeek Harness `0.1.0-rc.6`、Node.js 22.19+ 或 24+，以及 pnpm。
-从 npm 安装固定版本 `v0.1.3` 的组织包：
+从 npm 安装固定版本 `v0.1.4` 的组织包：
 
 ```sh
-dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.3
+dsh plugin --profile web add @webwalkerhq/dsh-replay-lab@0.1.4
 ```
 
 也可以使用相同版本的不可变 GitHub 源码 tag：
 
 ```sh
-dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.3
+dsh plugin --profile web add github:tbxy09/dsh-replay-lab#v0.1.4
 ```
 
 安装后重启 Web profile：
