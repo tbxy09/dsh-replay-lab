@@ -47,15 +47,16 @@ numbers and highlighted the largest absolute delta.
 
 ![Freeform table UI generated from this session's Replay sandbox](./assets/replay-dashboard-table.png)
 
-**Custom maze-garden TRACE.** Same Replay surface, no preset chip: type a hedge-maze
-prompt, **Send**, wait through **Prompt in flight**, then a looping path playback
-(baseline cyan / candidate gold, host-injected `stepCount` / `toolCalls` /
-`durationMs`). A maze is **not** the expected Replay evidence view. Expected
-Replay is the presets below (overlay, deltas, request surface, execution
-scorecard, cited sentence) or a compact table of host-injected numbers. This
-GIF only shows that an arbitrary custom prompt still Sends into the sandbox.
+**Custom numbered-capsule maze.** Same Replay surface, no preset chip: **Send** a
+dual-lane playhead prompt, wait through **Prompt in flight**, then looping
+capsule playback (baseline blue / candidate gold, clip-fill from the left,
+host-injected `stepCount` / `toolCalls` / `durationMs`). A maze is **not** the
+expected Replay evidence view. Expected Replay is the presets below (overlay,
+deltas, request surface, execution scorecard, cited sentence) or a compact
+table of host-injected numbers. This GIF only shows that an arbitrary custom
+prompt still Sends into the sandbox.
 
-![Typing a custom maze-garden prompt, Send, Prompt in flight, then TRACE playback](./assets/replay-lab-maze-trace.gif)
+![Custom prompt, Prompt in flight, then numbered-capsule playhead maze](./assets/replay-lab-maze-trace.gif)
 
 | Preset | What Send redraws |
 | --- | --- |
