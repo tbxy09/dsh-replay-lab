@@ -23,6 +23,57 @@ session 事件与对比证据。
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
+## 沙箱证据仪表盘
+
+打开一次已保留的 replay，选中 prompt preset **或自己写任意 prompt**，再点 **Send**。
+模型返回的 HTML 进入 opaque-origin iframe；所有数字都由 host 从 replay payload
+注入。Preset 只是起点：雷达、callout、diff、表格，或 payload 能支撑的任何图都可以要。
+非法 HTML 会回退到 host 图表。
+
+动图包含 **Send**、**Prompt in flight** 预检层，然后重绘（Execution delta →
+Request surface diff）。
+
+![Send、Prompt in flight 预检层，然后沙箱重绘](./assets/replay-lab-demo.gif)
+
+**不限于 preset。** 本 session（`Generate table UI` → Replay → Turn 1 · Minimal）
+没有要图表，而是要一张 Metric / Baseline / Candidate / Delta 对照表。iframe 用
+host 注入的数字渲染，并高亮最大绝对值 delta。
+
+![本 session Replay 沙箱生成的自由表格 UI](./assets/replay-dashboard-table.png)
+
+**自定义迷宫花园 TRACE。** 同一块 Replay 表面，不点 preset：手打绿篱迷宫 prompt，
+**Send**，经过 **Prompt in flight**，然后循环播放路径（baseline 冷青 /
+candidate 暖金；格子数、分叉、路径长来自 host 注入的 `stepCount` / `toolCalls` /
+`durationMs`）。这是 Replay iframe 的自由可视化，不是
+[dsh-trace-compare](https://github.com/lamost423/dsh-trace-compare) 的数字实时迷宫
+页签（`S15·47` 胶囊条、支路、折返）。
+
+![手打迷宫花园 prompt、Send、Prompt in flight，然后 TRACE 回放](./assets/replay-lab-maze-trace.gif)
+
+![迷宫花园 TRACE 回放（自定义 prompt）](./assets/replay-dashboard-maze-trace.png)
+
+
+| Preset                | Send 后重绘什么                               |
+| --------------------- | ---------------------------------------- |
+| Overlay all runs      | 每个保留 run 一条序列                            |
+| Focus selected        | 围绕 Saved-runs 选中项 vs baseline 排版         |
+| Metric deltas         | 最大绝对值 delta，不发明原因                        |
+| Request surface diff  | Route、phase、tools、hash                   |
+| Execution delta       | Scorecard 的 baseline / candidate / delta |
+| Summarize as sentence | 一句带引用的中文，不是图表                            |
+
+
+**Request surface diff** — route 同为 `deepseek-official / deepseek-v4-flash`；
+phase、system hash 和工具列表仍不同。
+
+![沙箱 iframe 中的 Request Surface 对比](./assets/replay-dashboard-surface.png)
+
+**为什么选择 Execution delta？** 这次 Standard replay 相对 observed baseline：
+fresh input +132、cache-read +9,344、耗时 +1.3 s、工具调用多 1 次。这些是执行
+指标，不是能力评分。
+
+![保留的 Standard replay 的 Execution delta 仪表盘](./assets/replay-dashboard-execution.png)
+
 ## Replay 证据：每张图只说明一个功能
 
 **1. Workspace 隔离与持久运行**
@@ -55,8 +106,7 @@ Narrative 来自一次显式触发的直接 model-runtime 调用，不会启动 
 evidence IDs 和 raw evidence 会随持久 run 保留；它不是跨 Agent 或跨 session
 共享的长期 memory。
 
-<details>
-<summary><h2>为什么需要 Replay Lab</h2></summary>
+## 为什么需要 Replay Lab
 
 ### 问：最初观察到的问题是什么？
 
@@ -116,11 +166,13 @@ Replay Lab 的目的，是研究这个组合，而不是假装一次比较已经
 
 它也揭示了 DSH 中一个实际的权衡：
 
-| 方案 | 请求面策略 | 权衡 |
-| --- | --- | --- |
-| **Minimal** | 以较小的 persona 和工具面开始 | 缩小首个请求的请求面，但也缺少更广泛的 DSH 能力 |
-| **Standard** | 一开始就暴露更完整的 DSH 请求面 | 保留完整能力集，但部分已观测运行更长或更偏探索 |
+
+| 方案                    | 请求面策略                        | 权衡                                |
+| --------------------- | ---------------------------- | --------------------------------- |
+| **Minimal**           | 以较小的 persona 和工具面开始          | 缩小首个请求的请求面，但也缺少更广泛的 DSH 能力        |
+| **Standard**          | 一开始就暴露更完整的 DSH 请求面           | 保留完整能力集，但部分已观测运行更长或更偏探索           |
 | **Anchored Standard** | 先使用类似 Minimal 的请求面，再恢复更广泛的能力 | 保留分阶段暴露假设，但引入 promotion 时机及其他实现变量 |
+
 
 随后出现的
 [Anchored Standard](https://github.com/xiaobright/dsh-anchored-standard)
@@ -306,7 +358,7 @@ Replay Lab 无法通过一次 rerun 证明：
 目标不是把一个 workaround 变成普遍理论，而是让 Model × Harness 比较变得更窄、
 可重复、具备 provenance，并诚实说明现有证据究竟能够证明什么。
 
-</details>
+
 
 ## 功能
 
@@ -322,15 +374,15 @@ Replay Lab 无法通过一次 rerun 证明：
 - 在每个 session 的 Conversation 和 Trajectory 旁增加一个 **Replay** 标签页。
 - 使用持久化 session projection 构建行，而不是依赖分页聊天节点。
 - 冻结 prompt、workspace hash、model、reasoning、max tokens、preset/plugin 请求面、
-  system hash 和 tool-schema hash。
+system hash 和 tool-schema hash。
 - host event 到达时捕获实时 turn-start workspace 状态；保持已观测的源 turn 不变，
-  只有候选项会执行。
+只有候选项会执行。
 - 在经过验证的 workspace 副本中运行候选项，并使用路径包含性保护；源 session 和
-  源 workspace 永远不会被重写或回滚。
+源 workspace 永远不会被重写或回滚。
 - 在终态边界恢复候选文件，同时保留持久事件、checkpoint hash、provenance 和对比证据。
 - host 重启后恢复带 checkpoint 的持久候选 workspace；当源/候选边界不分离时拒绝 cleanup。
 - 历史 turn-start checkpoint 不可用时，退回为带 provenance 标记的当前状态隔离
-  checkpoint；这不是严格的 S0 replay。
+checkpoint；这不是严格的 S0 replay。
 - 只使用独立记录的证据生成评分卡。
 - 拒绝不受支持的 host-plane 变更和不完整变体。
 

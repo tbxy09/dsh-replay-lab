@@ -27,6 +27,57 @@ while durable session events and comparison evidence remain available.
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-111827)
 
+## Sandboxed evidence dashboard
+
+Open a retained replay, pick a prompt preset **or type any prompt**, then
+**Send**. The model returns HTML into an opaque-origin iframe; every number is
+host-injected from the replay payload. Presets are starters. You can ask for a
+radar, callouts, a diff, a table, or any other visualization the payload can
+support. Invalid HTML falls back to the host chart.
+
+The GIF shows **Send**, the **Prompt in flight** overlay, then the redraw
+(Execution delta → Request surface diff).
+
+![Animated Send, Prompt in flight overlay, then sandboxed redraw](./assets/replay-lab-demo.gif)
+
+**Any prompt, not only presets.** This session (`Generate table UI` → Replay →
+Turn 1 · Minimal) asked for a compact metric table instead of a chart. The
+iframe rendered Metric / Baseline / Candidate / Delta with host-injected
+numbers and highlighted the largest absolute delta.
+
+![Freeform table UI generated from this session's Replay sandbox](./assets/replay-dashboard-table.png)
+
+**Custom maze-garden TRACE.** Same Replay surface, no preset chip: type a hedge-maze
+prompt, **Send**, wait through **Prompt in flight**, then a looping path playback
+(baseline cyan / candidate gold, host-injected `stepCount` / `toolCalls` /
+`durationMs`). This is a freeform iframe visualization, not the numbered Live Maze
+tab from [dsh-trace-compare](https://github.com/lamost423/dsh-trace-compare)
+(`S15·47` capsules, detours, backtracks).
+
+![Typing a custom maze-garden prompt, Send, Prompt in flight, then TRACE playback](./assets/replay-lab-maze-trace.gif)
+
+![Maze-garden TRACE playback from the custom prompt](./assets/replay-dashboard-maze-trace.png)
+
+| Preset | What Send redraws |
+| --- | --- |
+| Overlay all runs | One series per retained run |
+| Focus selected | Layout around the Saved-runs selection versus baseline |
+| Metric deltas | Largest absolute deltas; no invented causes |
+| Request surface diff | Route, phase, tools, hashes |
+| Execution delta | Scorecard baseline / candidate / delta |
+| Summarize as sentence | One cited Chinese sentence, not a chart |
+
+**Request surface diff** — route matches `deepseek-official / deepseek-v4-flash`;
+phase, system hash, and tool list still differ.
+
+![Sandboxed request-surface comparison inside the opaque iframe](./assets/replay-dashboard-surface.png)
+
+**Why Execution delta?** On this Standard replay the candidate used +132 fresh
+input tokens, +9,344 cache-read tokens, +1.3 s, and +1 tool call versus the
+observed baseline. Those are execution measurements, not a capability score.
+
+![Generated Execution delta dashboard for the retained Standard replay](./assets/replay-dashboard-execution.png)
+
 ## Replay evidence, one function at a time
 
 **1. Workspace isolation and retained run**
