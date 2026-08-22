@@ -37,6 +37,7 @@ export { builtInVariants } from './variants.ts'
 export * from './route-lineage.ts'
 export * from './call-evidence.ts'
 export * from './evidence-summary.ts'
+export * from './dashboard-prompts.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { replayLabDsh: ReplayLabService }

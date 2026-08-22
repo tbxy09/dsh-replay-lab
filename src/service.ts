@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { ArtifactStore, CaseSource, Oracle, ReplayHook, Runner } from './registries.ts'
 import { ReplayLabRegistries } from './registries.ts'
 import { compareCallEvidence } from './call-evidence.ts'
+import { buildDashboardPayload } from './dashboard-payload.ts'
+import { dashboardPromptOption, isDashboardPromptId, MAX_DASHBOARD_PROMPT_CHARS } from './dashboard-prompts.ts'
 import type { EvidenceSummarizer } from './evidence-summary.ts'
 import type { FrozenReplayCase, LabSnapshot, ReplayExperiment, ReplayHistoryEntry, ReplayableTurnRecord, ReplayTurnIdentifier, ReplayWorkspaceCheckpoint, RouteLineageEvidence, TransitionStage, VariantDescriptor } from './types.ts'
 import { freezeReplayTurn } from './case-source.ts'
@@ -211,7 +213,7 @@ export class ReplayLabService {
   }
 
   /** Explicitly spend one direct model-runtime call to narrate retained raw evidence. */
-  async summarize(experimentId: string, requestedSessionId?: string): Promise<LabSnapshot> {
+  async summarize(experimentId: string, requestedSessionId?: string, prompt?: string): Promise<LabSnapshot> {
     const [sessionId, draft] = this.requireDraft(requestedSessionId)
     const historyEntry = this.history.find(entry => entry.experiment.id === experimentId && entry.sourceSessionId === sessionId)
     const experiment = draft.experiment?.id === experimentId ? draft.experiment : historyEntry?.experiment
@@ -222,6 +224,11 @@ export class ReplayLabService {
     }
     if (experiment.callEvidenceComparison === undefined) throw new Error('call-level evidence comparison is unavailable')
     if (this.evidenceSummarizer === undefined) throw new Error('direct model-runtime evidence summarizer is unavailable')
+    const editablePrompt = prompt?.trim()
+    if (prompt !== undefined && editablePrompt?.length === 0) throw new Error('sentence prompt must not be empty')
+    if ((editablePrompt?.length ?? 0) > MAX_DASHBOARD_PROMPT_CHARS) {
+      throw new Error(`sentence prompt exceeds ${MAX_DASHBOARD_PROMPT_CHARS} characters`)
+    }
     let evidenceNarrative: NonNullable<ReplayExperiment['evidenceNarrative']>
     try {
       evidenceNarrative = await this.evidenceSummarizer.summarize({
@@ -229,6 +236,7 @@ export class ReplayLabService {
         baseline: experiment.baseline,
         candidate: experiment.candidate,
         comparison: experiment.callEvidenceComparison,
+        ...(editablePrompt === undefined ? {} : { prompt: editablePrompt }),
       })
     } catch (error) {
       evidenceNarrative = {
@@ -241,6 +249,58 @@ export class ReplayLabService {
     if (draft.experiment?.id === experimentId) this.drafts.set(sessionId, { ...draft, experiment: updated })
     this.upsertHistory(replayCase, updated)
     await this.store().put('summary', experimentId, { experimentId, evidenceNarrative })
+    await this.persist()
+    return this.snapshot(sessionId)
+  }
+
+  /** Explicit direct model-runtime generation; one bounded contract-repair retry is allowed. */
+  async renderDashboard(
+    experimentId: string,
+    requestedSessionId?: string,
+    promptId?: string,
+    prompt?: string,
+  ): Promise<LabSnapshot> {
+    const [sessionId, draft] = this.requireDraft(requestedSessionId)
+    const historyEntry = this.history.find(entry => entry.experiment.id === experimentId && entry.sourceSessionId === sessionId)
+    const experiment = draft.experiment?.id === experimentId ? draft.experiment : historyEntry?.experiment
+    const replayCase = draft.experiment?.id === experimentId ? draft.replayCase : historyEntry?.replayCase
+    if (experiment === undefined || replayCase === undefined) throw new Error(`experiment ${experimentId} is unavailable for this session`)
+    if (experiment.status !== 'completed' || experiment.baseline === undefined || experiment.candidate === undefined) {
+      throw new Error('only a completed replay with baseline/candidate evidence can render a dashboard')
+    }
+    if (promptId !== undefined && !isDashboardPromptId(promptId)) {
+      throw new Error(`unknown dashboard prompt ${promptId}`)
+    }
+    const editablePrompt = prompt?.trim()
+    if (prompt !== undefined && editablePrompt?.length === 0) throw new Error('dashboard prompt must not be empty')
+    if ((editablePrompt?.length ?? 0) > MAX_DASHBOARD_PROMPT_CHARS) {
+      throw new Error(`dashboard prompt exceeds ${MAX_DASHBOARD_PROMPT_CHARS} characters`)
+    }
+    if (this.evidenceSummarizer?.renderDashboard === undefined) {
+      throw new Error('direct model-runtime dashboard renderer is unavailable')
+    }
+    const option = dashboardPromptOption(promptId)
+    const payload = buildDashboardPayload(replayCase, experiment, {
+      history: this.history.filter(entry => entry.sourceSessionId === sessionId && entry.sourceTurn === replayCase.sourceTurn),
+      variants: this.registries.variants.list(),
+    })
+    let evidenceDashboard: NonNullable<ReplayExperiment['evidenceDashboard']>
+    try {
+      evidenceDashboard = await this.evidenceSummarizer.renderDashboard({
+        replayCase, payload, promptId: option.id, ...(editablePrompt === undefined ? {} : { prompt: editablePrompt }),
+      })
+    } catch (error) {
+      evidenceDashboard = {
+        schemaVersion: 'evidence-dashboard/v1', status: 'failed', promptVersion: 'evidence-dashboard-html/v2',
+        promptId: option.id, prompt: editablePrompt ?? option.instruction,
+        provider: replayCase.provider, model: replayCase.model, payloadHash: '',
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+    const updated: ReplayExperiment = { ...experiment, updatedAt: new Date().toISOString(), evidenceDashboard }
+    if (draft.experiment?.id === experimentId) this.drafts.set(sessionId, { ...draft, experiment: updated })
+    this.upsertHistory(replayCase, updated)
+    await this.store().put('dashboard', experimentId, { experimentId, evidenceDashboard })
     await this.persist()
     return this.snapshot(sessionId)
   }

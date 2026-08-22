@@ -7,6 +7,13 @@ import {
   type WorkspaceDriftProvenance,
 } from '../types.ts'
 import type { ReplayTabProps } from './slots.ts'
+import { buildDashboardPayload } from '../dashboard-payload.ts'
+import {
+  EVIDENCE_PROMPT_OPTIONS, evidencePromptOption, EVIDENCE_PROMPT_MODEL, EVIDENCE_PROMPT_PROVIDER,
+  isDashboardPromptId, isEvidencePromptId,
+  MAX_DASHBOARD_PROMPT_CHARS, type DashboardPromptId, type EvidencePromptId,
+} from '../dashboard-prompts.ts'
+import { assembleDashboardDocument, DASHBOARD_SANDBOX, DEFAULT_DASHBOARD_FRAGMENT } from '../dashboard-sandbox.ts'
 
 const statusLabel = {
   planned: 'Ready to run', approved: 'Approved', running: 'Running', completed: 'Completed',
@@ -21,7 +28,6 @@ const metricLabels = {
   cacheReadTokens: 'Cache read tokens', durationMs: 'Duration',
   stepCount: 'Steps', toolCalls: 'Tool calls',
 } as const
-const metricKeys = Object.keys(metricLabels) as Array<keyof RunMetrics>
 
 export function formatCount(value: number): string {
   return integerFormatter.format(value)
@@ -489,36 +495,6 @@ export function metricBarPercent(value: number, maximum: number): number {
   return Math.max(2, Math.min(100, (value / maximum) * 100))
 }
 
-function AllRunsEvidence({ replayCase, experiment, history, variants }: {
-  replayCase: FrozenReplayCase
-  experiment: ReplayExperiment
-  history: readonly ReplayHistoryEntry[]
-  variants: readonly VariantDescriptor[]
-}): ReactNode {
-  const columns = allRunEvidenceColumns(replayCase, experiment, history, variants)
-  return <section className="rld-result-section rld-result-runs" data-testid="all-runs-evidence">
-    <header><h3>Evidence summary · All runs</h3><span>1 observed baseline · {columns.length - 1} saved {columns.length === 2 ? 'run' : 'runs'}</span></header>
-    <div className="rld-result-table-scroll"><table aria-label="Recorded execution metrics for the observed baseline and all saved replay runs">
-      <thead><tr><th>Metric</th>{columns.map(column => <th key={column.id} data-active={column.id === experiment.id || undefined}>
-        <strong>{column.label}</strong><small>{column.detail}</small>
-      </th>)}</tr></thead>
-      <tbody>{metricKeys.map(key => {
-        const maximum = Math.max(0, ...columns.map(column => column.metrics?.[key] ?? 0))
-        return <tr key={key}><th>{metricLabels[key]}</th>{columns.map(column => {
-          const value = column.metrics?.[key]
-          return <td key={column.id} data-kind={column.kind} data-active={column.id === experiment.id || undefined}>
-            {value === undefined
-              ? <span className="rld-result-empty">Unavailable</span>
-              : <><strong title={String(value)}>{formatMetricValue(key, value)}</strong>
-                <span className="rld-result-bar" aria-hidden="true"><span style={{ width: `${metricBarPercent(value, maximum)}%` }} /></span></>}
-          </td>
-        })}</tr>
-      })}</tbody>
-    </table></div>
-    <p className="rld-result-neutral-note">Bars are scaled within each metric. Steps and tool calls describe activity, not outcome quality.</p>
-  </section>
-}
-
 export function rawEvidenceDownloadName(replayCase: FrozenReplayCase, experiment: ReplayExperiment): string {
   const experimentId = experiment.id.replace(/[^a-zA-Z0-9._-]+/g, '-')
   return `replay-evidence-turn-${replayCase.sourceTurn}-${experimentId}.json`
@@ -552,6 +528,7 @@ export function rawEvidenceArtifact(
     scorecardMissingReason: experiment.scorecardMissingReason ?? null,
     callEvidenceComparison: experiment.callEvidenceComparison ?? null,
     evidenceNarrative: experiment.evidenceNarrative ?? null,
+    evidenceDashboard: experiment.evidenceDashboard ?? null,
     workspaceDrift: workspaceDrift ?? null,
   }
 }
@@ -565,28 +542,140 @@ function rawEvidenceDownloadHref(
   return `data:application/json;charset=utf-8,${encodeURIComponent(json)}`
 }
 
-function EvidenceNarrativePanel({ experiment, summarizing, onSummarize }: {
+function EvidenceDashboardPanel({ replayCase, experiment, history, variants, rendering, summarizing, onRender, onSummarize }: {
+  replayCase: FrozenReplayCase
   experiment: ReplayExperiment
+  history: readonly ReplayHistoryEntry[]
+  variants: readonly VariantDescriptor[]
+  rendering: boolean
   summarizing: boolean
-  onSummarize: () => void
+  onRender: (promptId: DashboardPromptId, prompt: string) => void
+  onSummarize: (prompt: string) => void
 }): ReactNode {
+  const payload = buildDashboardPayload(replayCase, experiment, { history, variants })
+  const dashboard = experiment.evidenceDashboard
+  const initialPromptOption = evidencePromptOption(
+    isEvidencePromptId(dashboard?.promptId) ? dashboard.promptId : undefined,
+  )
+  const [pendingPromptId, setPendingPromptId] = useState<EvidencePromptId>()
+  const [selectedPromptId, setSelectedPromptId] = useState<EvidencePromptId>(initialPromptOption.id)
+  const [promptDraft, setPromptDraft] = useState(dashboard?.prompt ?? initialPromptOption.instruction)
+  const selectedOption = evidencePromptOption(selectedPromptId)
+  const fragment = dashboard?.status === 'completed' && dashboard.fragment !== undefined
+    ? dashboard.fragment
+    : DEFAULT_DASHBOARD_FRAGMENT
+  const srcdoc = assembleDashboardDocument(payload, fragment)
+  const generated = dashboard?.status === 'completed'
+  const launched = dashboard?.promptId !== undefined ? evidencePromptOption(dashboard.promptId) : undefined
+  const pendingOption = pendingPromptId === undefined ? undefined : evidencePromptOption(pendingPromptId)
+  const generating = (rendering || summarizing) && pendingOption !== undefined
   const narrative = experiment.evidenceNarrative
-  const heading = narrative?.status === 'completed' ? 'Evidence summary' : 'Summarize raw evidence'
-  return <section className="rld-result-section rld-evidence-narrative" aria-labelledby="rld-evidence-narrative-heading">
-    <header><h3 id="rld-evidence-narrative-heading">{heading}</h3><span>One direct model-runtime call · no agent</span></header>
+  const saved = payload.runs.filter(run => run.kind === 'candidate').length
+  const busy = rendering || summarizing
+  const sentenceReady = experiment.callEvidenceComparison !== undefined
+  const sendDisabled = busy || promptDraft.trim().length === 0
+    || (selectedOption.kind === 'sentence' && !sentenceReady)
+  useEffect(() => {
+    if (!busy) setPendingPromptId(undefined)
+  }, [busy])
+  useEffect(() => {
+    if (dashboard?.prompt !== undefined && isDashboardPromptId(dashboard.promptId)) {
+      setSelectedPromptId(dashboard.promptId)
+      setPromptDraft(dashboard.prompt)
+    }
+  }, [dashboard?.prompt, dashboard?.promptId])
+  return <section className="rld-result-section rld-evidence-narrative" aria-labelledby="rld-evidence-dashboard-heading">
+    <header>
+      <h3 id="rld-evidence-dashboard-heading">Evidence summary</h3>
+      <span>{generating
+        ? `Sending prompt to ${EVIDENCE_PROMPT_MODEL} · reasoning off`
+        : generated
+          ? `${launched?.label ?? 'Model chart'} · host-injected numbers`
+          : `${saved} saved ${saved === 1 ? 'run' : 'runs'} · Saved runs highlights the series`}</span>
+    </header>
     <div className="rld-disclosure-body">
-      {narrative?.text === undefined
-        ? <p className="rld-result-empty">{narrative?.error ?? 'Raw calls and deterministic facts are ready to summarize.'}</p>
-        : <blockquote>{narrative.text}</blockquote>}
+      <div className="rld-dashboard-stage" data-generating={generating || undefined}>
+        <iframe
+          className="rld-dashboard-frame"
+          title="Sandboxed evidence dashboard"
+          data-testid="evidence-dashboard-frame"
+          sandbox={DASHBOARD_SANDBOX}
+          referrerPolicy="no-referrer"
+          srcDoc={srcdoc}
+        />
+        {generating && pendingOption !== undefined && <div className="rld-dashboard-generating" role="status" data-testid="dashboard-prompt-inflight">
+          <strong>Prompt in flight · {EVIDENCE_PROMPT_MODEL} · reasoning off</strong>
+          <span>{pendingOption.label}</span>
+          <small>{pendingOption.kind === 'sentence'
+            ? 'One cited Chinese sentence. Host still supplies the evidence facts.'
+            : 'Direct model-runtime generation; one contract-repair retry may follow. The host injects every number.'}</small>
+        </div>}
+      </div>
+      {dashboard?.status === 'failed' && <p className="rld-session-warning" role="status">
+        Model dashboard rejected; showing the stable host fallback. {dashboard.error}
+      </p>}
+      <p className="rld-result-neutral-note">
+        Prompt goes to {EVIDENCE_PROMPT_PROVIDER}/{EVIDENCE_PROMPT_MODEL} with reasoning off. Numbers stay host-injected; the iframe cannot reach the parent session.
+      </p>
+      <div className="rld-dashboard-prompts">
+        <header>
+          <h4>Prompt</h4>
+          <span>{EVIDENCE_PROMPT_MODEL} · reasoning off · one shot, no agent</span>
+        </header>
+        <div className="rld-prompt-presets" role="tablist" aria-label="Prompt presets">
+          {EVIDENCE_PROMPT_OPTIONS.map(option => <button
+            key={option.id}
+            type="button"
+            className="rld-prompt-preset"
+            role="tab"
+            title={option.blurb}
+            aria-selected={selectedPromptId === option.id}
+            aria-pressed={selectedPromptId === option.id}
+            data-testid={option.id === 'sentence' ? 'dashboard-prompt-sentence' : `dashboard-prompt-option-${option.id}`}
+            disabled={busy}
+            onClick={() => {
+              setSelectedPromptId(option.id)
+              setPromptDraft(option.instruction)
+            }}
+          >{option.label}</button>)}
+        </div>
+        <div className="rld-prompt-composer">
+          <textarea
+            id="rld-dashboard-prompt-input"
+            data-testid="dashboard-prompt-input"
+            aria-label="Evidence prompt"
+            placeholder="Edit the loaded preset, then send it to the model"
+            value={promptDraft}
+            maxLength={MAX_DASHBOARD_PROMPT_CHARS}
+            rows={3}
+            disabled={busy}
+            onChange={event => setPromptDraft(event.currentTarget.value)}
+          />
+          <footer>
+            <span>{promptDraft.length.toLocaleString()} / {MAX_DASHBOARD_PROMPT_CHARS.toLocaleString()}</span>
+            <div className="rld-prompt-actions">
+              <button
+                type="button"
+                className="rld-prompt-send"
+                data-testid="dashboard-prompt-send"
+                disabled={sendDisabled}
+                onClick={() => {
+                  setPendingPromptId(selectedOption.id)
+                  if (selectedOption.kind === 'sentence') onSummarize(promptDraft)
+                  else if (isDashboardPromptId(selectedOption.id)) onRender(selectedOption.id, promptDraft)
+                }}
+              >{pendingPromptId === selectedPromptId ? 'Sending…' : 'Send'}</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+      {narrative?.text !== undefined && <blockquote>{narrative.text}</blockquote>}
       {narrative !== undefined && narrative.citedEvidenceIds.length > 0 && <p className="rld-behavior-note">Cited facts: {narrative.citedEvidenceIds.join(', ')}</p>}
-      <button type="button" disabled={summarizing || experiment.callEvidenceComparison === undefined} onClick={onSummarize}>
-        {summarizing ? 'Summarizing…' : narrative?.status === 'completed' ? 'Regenerate summary' : 'Summarize raw evidence'}
-      </button>
     </div>
   </section>
 }
 
-function CompletedResult({ replayCase, experiment, activeExperiment, variants, history, routeLineage, workspaceDrift, summarizing, onPlan, onSummarize, onSelectHistory }: {
+function CompletedResult({ replayCase, experiment, activeExperiment, variants, history, routeLineage, workspaceDrift, rendering, summarizing, onPlan, onRender, onSummarize, onSelectHistory }: {
   replayCase: FrozenReplayCase
   experiment: ReplayExperiment
   activeExperiment?: ReplayExperiment
@@ -594,9 +683,11 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
   history: readonly ReplayHistoryEntry[]
   routeLineage: readonly RouteLineageEvidence[]
   workspaceDrift?: WorkspaceDriftProvenance
+  rendering: boolean
   summarizing: boolean
   onPlan: (variantId: string) => void
-  onSummarize: () => void
+  onRender: (promptId: DashboardPromptId, prompt: string) => void
+  onSummarize: (prompt: string) => void
   onSelectHistory: (experimentId: string) => void
 }): ReactNode {
   const rawEvidenceFilename = rawEvidenceDownloadName(replayCase, experiment)
@@ -611,7 +702,16 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
       </summary>
       <SavedRuns history={history} variants={variants} displayedId={experiment.id} onSelect={onSelectHistory} />
     </details>}
-    <AllRunsEvidence replayCase={replayCase} experiment={experiment} history={history} variants={variants} />
+    <EvidenceDashboardPanel
+      replayCase={replayCase}
+      experiment={experiment}
+      history={history}
+      variants={variants}
+      rendering={rendering}
+      summarizing={summarizing}
+      onRender={onRender}
+      onSummarize={onSummarize}
+    />
     <details className="rld-result-disclosure rld-result-setup-disclosure">
       <summary><strong>Run setup</strong><span>Observed turn · isolated candidate · explicit approval</span></summary>
       <div className="rld-result-setup-grid">
@@ -619,9 +719,11 @@ function CompletedResult({ replayCase, experiment, activeExperiment, variants, h
         <CandidateVariants variants={variants} selectedId={activeExperiment?.candidateVariantId} onSelect={onPlan} />
       </div>
     </details>
-    <RequestSurfaceDiff baseline={experiment.baseline} candidate={experiment.candidate} baselineFallback={replayCase} />
-    <ExecutionDelta scorecard={experiment.scorecard} missingReason={experiment.scorecardMissingReason} />
-    <EvidenceNarrativePanel experiment={experiment} summarizing={summarizing} onSummarize={onSummarize} />
+    <details className="rld-result-disclosure">
+      <summary><strong>Host comparison tables</strong><span>Deterministic request surface · execution delta</span></summary>
+      <RequestSurfaceDiff baseline={experiment.baseline} candidate={experiment.candidate} baselineFallback={replayCase} />
+      <ExecutionDelta scorecard={experiment.scorecard} missingReason={experiment.scorecardMissingReason} />
+    </details>
     <details className="rld-result-disclosure">
       <summary><strong>Raw evidence</strong><span>Downloadable JSON · session IDs, event counts, request headers, and metrics</span></summary>
       <div className="rld-result-download">
@@ -682,9 +784,11 @@ function ExperimentWorkbench({ controller, state, sessionId, onBack }: {
           history={history}
           routeLineage={snapshot?.routeLineage ?? []}
           workspaceDrift={displayedDrift}
+          rendering={state.status === 'loading'}
           summarizing={state.status === 'loading'}
           onPlan={variantId => { void controller.plan(variantId) }}
-          onSummarize={() => { void controller.summarize(displayedExperiment.id) }}
+          onRender={(promptId, prompt) => { void controller.renderDashboard(displayedExperiment.id, promptId, prompt) }}
+          onSummarize={prompt => { void controller.summarize(displayedExperiment.id, prompt) }}
           onSelectHistory={setViewingId}
         />
         : <>

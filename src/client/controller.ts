@@ -61,8 +61,14 @@ export class ReplayLabController {
     this.startPolling()
   }
 
-  async summarize(experimentId: string): Promise<void> {
-    await this.request('POST', '/summarize', { sessionId: this.requireSessionId(), experimentId })
+  async summarize(experimentId: string, prompt?: string): Promise<void> {
+    await this.request('POST', '/summarize', { sessionId: this.requireSessionId(), experimentId, prompt })
+  }
+
+  async renderDashboard(experimentId: string, promptId: string, prompt: string): Promise<void> {
+    await this.request('POST', '/render-dashboard', {
+      sessionId: this.requireSessionId(), experimentId, promptId, prompt,
+    })
   }
 
   async reset(): Promise<void> {
