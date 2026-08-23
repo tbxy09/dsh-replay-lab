@@ -4,6 +4,13 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## Unreleased
 
+## 0.1.6 - 2026-08-22
+
+### Changed
+
+- Present the README guidance about text-first technical work as plain prose in
+  both English and Simplified Chinese instead of a rendered callout.
+
 ## 0.1.5 - 2026-08-22
 
 ### Changed
